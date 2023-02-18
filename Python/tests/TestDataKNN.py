@@ -12,8 +12,9 @@
 #     pip install open3d
 #     pip install laspy[lazrs,laszip]
 #     pip install pye57
-
 #     pip install -U scikit-learn
+#     pip install matplotlib
+#     pip install opencv-contrib-python
 
 #%%
 from sklearn.neighbors import KDTree

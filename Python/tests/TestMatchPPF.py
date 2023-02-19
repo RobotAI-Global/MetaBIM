@@ -53,8 +53,26 @@ for i, result in enumerate(results):
         pct = cv.ppf_match_3d.transformPCPose(pc, result.pose)
         cv.ppf_match_3d.writePLY(pct, resultFileName)
 
+#%% using Open3d
+import open3d as o3d
+import numpy as np
 
-#%% show
+modelname = "parasaurolophus_6700"
+scenename = "rs1_normals"
+resultFileName = "%sPCTrans.ply" % modelname
+pcd_read = o3d.io.read_point_cloud('%s.ply' %modelname)
+o3d.visualization.draw_geometries([pcd_read])
+pcd_read = o3d.io.read_point_cloud('%s.ply' %scenename)
+o3d.visualization.draw_geometries([pcd_read])
+pcd_read = o3d.io.read_point_cloud(resultFileName)
+o3d.visualization.draw_geometries([pcd_read])
+
+
+#%% show not working
+import cv2 as cv
+import numpy as np
+modelname = "parasaurolophus_6700"
+resultFileName = "%sPCTrans.ply" % modelname
 def load_bunny():
     with open(cv.samples.findFile(resultFileName), 'r') as f:
         s = f.read()
@@ -93,3 +111,4 @@ myWindow.showWidget("bunny", pw_bunny, cloud_pose_global)
 #myWindow.setWidgetPosePy("bunny")
 myWindow.spin();
 print("Last event loop is over")
+# %%

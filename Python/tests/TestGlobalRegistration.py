@@ -121,6 +121,8 @@ fname_press = r'D:\Uri\Hamlet\Customers\MetaBIM\Data\2023-02-10\pressure.laz'
 fname_valve = r'D:\Uri\Hamlet\Customers\MetaBIM\Data\2023-02-10\valve.laz'
 fname_farm  = r'D:\Uri\Hamlet\Customers\MetaBIM\Data\2023-02-10\farm2M.laz'
 
+fname_farm  = r'D:\Uri\Hamlet\Customers\MetaBIM\Data\2023-02-10\pump.laz'
+
 data_pump   = data_load(fname_pump)
 data_farm   = data_load(fname_farm)
 

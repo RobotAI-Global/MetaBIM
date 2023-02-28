@@ -7,3 +7,4 @@ Data/
 Python/examples/Rusu_FPFH_ICRA2009.pdf
 
 envs/
+Python/envs/*.*

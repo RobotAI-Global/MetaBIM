@@ -211,7 +211,7 @@ if __name__ == "__main__":
 
     #kd_tree_feature_match_1()
     #knn_search()
-    #radius_search()
+    radius_search()
     #octtree_show()
     #farthest_sampling()
-    compute_normals()
+    #compute_normals()

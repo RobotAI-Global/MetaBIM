@@ -33,21 +33,53 @@ def get_box_mesh():
     #print(mesh)
     return mesh
 
-def get_pcd_from_vertex():
-    point_data = np.array(
-        [
-            [-1, -1, -1],
-            [-1, -1,  1],            
-            [-1,  1, -1],
-            [-1,  1,  1],   
-            [ 1, -1, -1],
-            [ 1, -1,  1],               
-            [ 1,  1, -1],
-            [ 1,  1,  1],             
-            #[0, 0, 0],
-        ],
-        dtype=np.float64,
-    )
+def get_vertex(vtype = 1):
+    # define points for tests
+    if vtype == 1: # non symmetrical 2 opposite points
+        point_data = np.array(
+            [
+                [-1, -1, -1],
+                [-1, -1,  0.5],            
+                [-1,  0.6, -1],
+                [ 0.7, -1, -1],                               
+                [-0.5,  1,  1],   
+                [ 1, -0.6,  1],               
+                [ 1,  1, -0.7],
+                [ 1,  1,  1],             
+                #[0, 0, 0],
+            ],
+            dtype=np.float64,
+        )
+    elif vtype == 2: # symmetrical
+        point_data = np.array(
+            [
+                [-1, -1, -1],
+                [-1, -1,  1],            
+                [-1,  1, -1],
+                [-1,  1,  1],   
+                [ 1, -1, -1],
+                [ 1, -1,  1],               
+                [ 1,  1, -1],
+                [ 1,  1,  1],             
+                #[0, 0, 0],
+            ],
+            dtype=np.float64,
+        )
+
+    elif vtype == 11: # random with 1 match
+        point_data = np.random.rand(32,3)*10
+
+    elif vtype == 12: # random with 2 matches
+        point_data = np.random.rand(10,3)*10
+        point_data = np.vstack((point_data,point_data[::-1,:]+10))
+    
+    else:
+        ValueError('bad vtype')
+        
+    return point_data
+
+def get_pcd_from_vertex(point_data):
+    # transform points to pcd
 
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(point_data)
@@ -133,7 +165,6 @@ def add_value(dict_obj, key, value):
         dict_obj[key] = [dict_obj[key], value]
       
 def do_distance_hash_python(points):
-   
     # compute distances
     dist_dict = {}
     for i in range(len(points)):
@@ -181,19 +212,81 @@ def sets_intersect(pairs_ij, pairs_ik):
 
     return pairs_jk
 
+def dict_intersect(pairs_ij, pairs_ik):
+    # intersect common indices of the sets
+    # make all the combinations when the first column matches
+    
+    pairs_jk = {}
+    
+    for sij in pairs_ij:
+        for sik in pairs_ik:
+            if sij[0] == sik[0]:
+                add_value(pairs_jk,(sij[1] ,sik[1]),sij[0])
+
+    return pairs_jk
+
+def match_triple_dict(pairs_ij, pairs_ik, pairs_jk):
+    # check matching
+    pairs_jk_est  = dict_intersect(pairs_ij, pairs_ik)
+
+    #print(pairs_jk_est.keys())
+    pairs_common = pairs_jk_est.keys() & pairs_jk
+    print(pairs_common)
+    triples = set()
+    for k in pairs_common:
+        if isinstance(pairs_jk_est[k],list):
+            for v in pairs_jk_est[k]:
+                triples.add((v,k[0],k[1]))
+        else:
+            triples.add((pairs_jk_est[k],k[0],k[1]))
+    
+            
+    return triples
+
 def get_match_triples(dist_hash, points, i, j, k):
     # extract matching triples from hash dictionary
     dkey_ij  = dist2key(np.linalg.norm(points[i] - points[j]))
     dkey_ik  = dist2key(np.linalg.norm(points[i] - points[k]))
     dkey_jk  = dist2key(np.linalg.norm(points[j] - points[k]))
-    pairs_ij = np.array(dist_hash.get(dkey_ij))
-    pairs_ik = np.array(dist_hash.get(dkey_ik))
-    pairs_jk = np.array(dist_hash.get(dkey_jk))
+    pairs_ij = dist_hash.get(dkey_ij)
+    pairs_ik = dist_hash.get(dkey_ik)
+    pairs_jk = dist_hash.get(dkey_jk)
     # intersection
-    inter_jk = np.intersect1d(pairs_ij[:,1], pairs_ik[:,1])
-    inter_jj = np.intersect1d(inter_jk, pairs_jk[:,0])
-    inter_kk = np.intersect1d(inter_jk, pairs_jk[:,1])
-    return True
+    #pairs_ijk = sets_intersect(pairs_ij, pairs_ik)
+    #pairs_jki = sets_intersect(pairs_ik, pairs_jk)
+    #inter_jk = np.intersect1d(pairs_ij[:,1], pairs_ik[:,1])
+    cycles_ijk = match_triple_dict(pairs_ij, pairs_ik, pairs_jk)
+    
+    print("set ij:",pairs_ij)
+    print("set ik:",pairs_ik)
+    print("set jk:",pairs_jk)
+    print('cycle ijk: ',cycles_ijk)  
+    #print(cycles_ijk)
+    return cycles_ijk
+
+def point_select(dist_hash, pnum = 1):
+    # select the lowest probability tuples from the hash
+    MAX_POINT_NUM   = 8
+    count_per_node  = np.zeros(MAX_POINT_NUM)
+    for k in dist_hash:
+        vlist = dist_hash[k]
+        for e in vlist:
+            #print(e)
+            n1 = e[0]
+            count_per_node[n1] += 1
+            n2 = e[1]
+            count_per_node[n2] += 1
+         
+    print(dist_hash)   
+    print(count_per_node)
+    #This returns the k-smallest values. Note that these may not be in sorted order.
+    MIN_NUMBER = 3
+    idx = np.argpartition(count_per_node, MIN_NUMBER)
+    print(idx)
+    print(count_per_node[idx[:MIN_NUMBER]])
+        
+    return count_per_node
+
                        
 # =========================================    
 def test_closest_point():
@@ -246,20 +339,47 @@ def test_sets_intersect():
     pij = set([(0,1),(0,2),(1,3),(1,4)])
     pik = set([(0,4),(1,5),(1,7),(2,6),(3,4)])
     pjk = sets_intersect(pij,pik)
+    
     print("set ij:",pij)
     print("set ik:",pik)
     print('intersect ijk: ',pjk) 
     
+def test_dicts_intersect():
+    # test different combinations of indices
+    pij = set([(0,1),(0,2),(1,3),(1,4)])
+    pik = set([(0,4),(1,5),(1,7),(2,6),(3,4)])
+    pjk = dict_intersect(pij,pik).keys()
+    print("set ij:",pij)
+    print("set ik:",pik)
+    print('intersect ijk: ',pjk)  
     
+def test_match_dicts():
+    # test different combinations of indices
+    pij = set([(0,1),(0,2),(1,3),(1,4),(2,3)])
+    pik = set([(0,4),(1,5),(1,7),(2,5),(2,6),(3,4)])
+    pjk = set([(1,4),(3,5),(2,5)])
+    pijk = match_triple_dict(pij,pik,pjk)
+    print("set ij:",pij)
+    print("set ik:",pik)
+    print("set jk:",pjk)
+    print('cycle ijk: ',pijk)     
+
+       
 def test_match_triples():
     # matching triples
-    pcd = get_pcd_from_vertex()
+    dat = get_vertex(12)
+    pcd = get_pcd_from_vertex(dat)
     dct = do_distance_hash_python(pcd.points)   
-    i, j, k = 0,7,1  
+    i, j, k = 0,2,1  
     triples = get_match_triples(dct, pcd.points, i, j, k)  
-    print(triples)
+    #print(triples)
     
-        
+def test_point_select(pnum = 3):
+    # testing point selection from the distances 
+    dat = get_vertex(1)
+    pcd = get_pcd_from_vertex(dat)
+    dct = do_distance_hash_python(pcd.points) 
+    points = point_select(dct)       
 
 if __name__ == "__main__":
 
@@ -271,6 +391,10 @@ if __name__ == "__main__":
     #test_dist_hash_python() # ok
     #test_get_pairs()
     #test_pairs_intersect() #nok
-    test_sets_intersect()
-    #test_match_triples()
+    #test_sets_intersect()
+    #test_dicts_intersect()
+    #test_match_dicts()  # ok
+    #test_match_triples() # OK
+    test_point_select()
+
     

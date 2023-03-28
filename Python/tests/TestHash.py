@@ -273,9 +273,9 @@ def point_select(dist_hash, pnum = 1):
         for e in vlist:
             #print(e)
             n1 = e[0]
-            count_per_node[n1] += 1
+            count_per_node[n1] += len(vlist)
             n2 = e[1]
-            count_per_node[n2] += 1
+            count_per_node[n2] += len(vlist)
          
     print(dist_hash)   
     print(count_per_node)

@@ -67,7 +67,7 @@ def get_vertex(vtype = 1):
         )
 
     elif vtype == 11: # random with 1 match
-        point_data = np.random.rand(32,3)*10
+        point_data = np.random.rand(32,3)*100
 
     elif vtype == 12: # random with 2 matches
         point_data = np.random.rand(10,3)*10
@@ -171,7 +171,7 @@ def do_distance_hash_python(points):
         for j in range(len(points)):
         
             dist_ij = np.linalg.norm(points[i] - points[j])
-            dkey = np.round(dist_ij*10)/10
+            dkey = dist2key(dist_ij) #np.round(dist_ij*10)/10
             add_value(dist_dict, dkey, (i,j))
             #keys.append(dist_ij)
             #vals.append((i,j)) 
@@ -180,7 +180,7 @@ def do_distance_hash_python(points):
 def get_match_pairs(dist_hash, points, i, j):
     # extract matching pairs from hash dictionary
     dist_points = np.linalg.norm(points[i] - points[j])
-    dkey  = np.round(dist_points*10)/10
+    dkey  = dist2key(dist_points) #np.round(dist_points*10)/10
     pairs = dist_hash.get(dkey)
     return pairs
 
@@ -264,10 +264,20 @@ def get_match_triples(dist_hash, points, i, j, k):
     #print(cycles_ijk)
     return cycles_ijk
 
+def find_max_points_in_hash(dist_hash):
+    # runs on all the key pairs in the hash and finds the max number 
+    mv      = 0
+    for k in dist_hash:
+        vlist = dist_hash[k]
+        for e in vlist:
+            mv = np.maximum(mv, e[0])
+    return mv
+
 def point_select(dist_hash, pnum = 1):
     # select the lowest probability tuples from the hash
-    MAX_POINT_NUM   = 8
-    count_per_node  = np.zeros(MAX_POINT_NUM)
+    MAX_POINT_NUM   = find_max_points_in_hash(dist_hash)
+    print('MAX_POINT_NUM %d' %MAX_POINT_NUM)
+    count_per_node  = np.zeros(MAX_POINT_NUM+1)
     for k in dist_hash:
         vlist = dist_hash[k]
         for e in vlist:
@@ -277,7 +287,7 @@ def point_select(dist_hash, pnum = 1):
             n2 = e[1]
             count_per_node[n2] += len(vlist)
          
-    print(dist_hash)   
+    #print(dist_hash)   
     print(count_per_node)
     #This returns the k-smallest values. Note that these may not be in sorted order.
     MIN_NUMBER = 3
@@ -376,7 +386,7 @@ def test_match_triples():
     
 def test_point_select(pnum = 3):
     # testing point selection from the distances 
-    dat = get_vertex(1)
+    dat = get_vertex(11)
     pcd = get_pcd_from_vertex(dat)
     dct = do_distance_hash_python(pcd.points) 
     points = point_select(dct)       

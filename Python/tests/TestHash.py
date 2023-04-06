@@ -239,8 +239,7 @@ def match_triple_dict(pairs_ij, pairs_ik, pairs_jk):
                 triples.add((v,k[0],k[1]))
         else:
             triples.add((pairs_jk_est[k],k[0],k[1]))
-    
-            
+          
     return triples
 
 def get_match_triples(dist_hash, points, i, j, k):

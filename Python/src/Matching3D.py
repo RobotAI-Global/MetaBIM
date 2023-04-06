@@ -68,6 +68,9 @@ def get_test_vertex(vtype = 1):
             ],
             dtype=np.float64,
         )
+        
+    elif vtype == 10: # random with 1 match
+        point_data = np.random.rand(10,3)*100        
 
     elif vtype == 11: # random with 1 match
         point_data = np.random.rand(32,3)*100
@@ -115,18 +118,70 @@ def add_value(dict_obj, key, value):
     else:
         dict_obj[key] = [dict_obj[key], value]
       
-def do_distance_hash_python(points):
+def distance_hash_python(points):
     # compute distances
     dist_dict = {}
+    pairs_dict = {}
     for i in range(len(points)):
         for j in range(len(points)):
         
             dist_ij = np.linalg.norm(points[i] - points[j])
-            dkey = dist2key(dist_ij) #np.round(dist_ij*10)/10
+            dkey = dist2key(dist_ij) #  
             add_value(dist_dict, dkey, (i,j))
-            #keys.append(dist_ij)
-            #vals.append((i,j)) 
-    return dist_dict
+            add_value(pairs_dict,(i,j), dkey)
+
+    return dist_dict, pairs_dict
+
+    
+def adjacency_matrix(edge_list, num_of_nodes):
+    # Basic constructor method :  Convert edge list to adjacency list
+    
+    # # represented with a multi-dimensional array
+    # adjacency_mtrx = [[] for _ in range(num_of_nodes)]
+    # # Add edges to corresponding nodes of the graph
+    # for (origin, dest) in edge_list:
+    #     adjacency_mtrx[origin].append(dest)
+        
+    # represented with a dictionalry
+    adjacency_mtrx = {}
+    # Add edges to corresponding nodes of the graph
+    for (origin, dest) in edge_list:
+        add_value(adjacency_mtrx, origin, dest)       
+        
+    return adjacency_mtrx
+
+def get_match_pairs(dist_hash, dist_points):
+    # extract matching pairs from hash dictionary
+    #dist_points = np.linalg.norm(points[i] - points[j])
+    dkey  = dist2key(dist_points) #np.round(dist_points*10)/10
+    pairs = dist_hash.get(dkey)
+    return pairs
+
+def radius_search(pcd, point_coord = [0,0,0], search_dist = 0.2):
+    # search by radius
+    print("Find the neighbors of %s point with distance less than %d"  %(str(point_coord),search_dist ))
+    
+    pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+    [k, idx, _] = pcd_tree.search_radius_vector_3d(point_coord, search_dist)
+    np.asarray(pcd.colors)[idx[1:], :] = [0, 1, 0]
+
+    print("Displaying the point cloud ...\n")
+    o3d.visualization.draw([pcd])
+
+def knn_search():
+    print("Loading pointcloud ...")
+    sample_pcd = o3d.data.PCDPointCloud()
+    pcd = o3d.io.read_point_cloud(sample_pcd.path)
+    pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+
+    print(
+        "Find the 2000 nearest neighbors of 50000th point, and painting them red ..."
+    )
+    [k, idx, _] = pcd_tree.search_knn_vector_3d(pcd.points[50000], 2000)
+    np.asarray(pcd.colors)[idx[1:], :] = [1, 0, 0]
+
+    print("Displaying the final point cloud ...\n")
+    o3d.visualization.draw([pcd])
 
 
 #%% Deals with multuple templates
@@ -141,6 +196,15 @@ class Matching3D:
         
         self.srcObj3d           = None   # model to be matched
         self.dstObj3d           = None   # target to be matched to
+        
+        self.srcDist            = None   # distance hash for source
+        self.dstDist            = None   # distance hash for target
+        
+        self.srcPairs           = None   # pairs hash for source (inverse index of srcDist)
+        self.dstPairs           = None   # pairs hash for target (inverse index of dstDist)
+        
+        self.srcAdjacency       = None   # adjacency mtrx for source
+        self.dstAdjacency       = None   # adjacency mtrx for target        
                
         self.Print('3D-Manager is created')
         
@@ -148,9 +212,12 @@ class Matching3D:
         # loads 3D data by test specified
         ret = False
         if testType == 1:    
-            pcd_data = o3d.data.DemoICPPointClouds()
-            source = o3d.io.read_point_cloud(pcd_data.paths[0])
-            target = o3d.io.read_point_cloud(pcd_data.paths[1])
+            point_data  = get_test_vertex(1)
+            source      = get_pcd_from_vertex(point_data)
+            source.translate((1, 1, 1))
+            source.paint_uniform_color([0.1, 0.8, 0.1])
+            target      = get_pcd_from_vertex(point_data)
+            target.paint_uniform_color([0.8, 0.1, 0.1])
      
         elif testType == 2:
             print("Load two aligned point clouds.")
@@ -178,15 +245,36 @@ class Matching3D:
             
         elif testType == 11:
             self.Print("one point cloud is a part of the other.")
-            point_data  = get_test_vertex(11)
+            point_data  = get_test_vertex(10)
             target      = get_pcd_from_vertex(point_data)
             target.paint_uniform_color([0.8, 0.1, 0.1]) 
-            point_data  = point_data[1:10,:]
+            point_data  = point_data[:7,:]
             source      = get_pcd_from_vertex(point_data)
             source.paint_uniform_color([0.1, 0.8, 0.1])
             source.translate((1, 1, 1))
+            
+        elif testType == 12:
+            self.Print("one point cloud is a part of the other with noise.")
+            point_data  = get_test_vertex(11)
+            target      = get_pcd_from_vertex(point_data)
+            target.paint_uniform_color([0.8, 0.1, 0.1]) 
+            point_data  = point_data[:7,:]
+            source      = get_pcd_from_vertex(point_data)
+            source      = apply_noise(source, 0, 0.1)
+            source.paint_uniform_color([0.1, 0.8, 0.1]) 
+            source.translate((1, 1, 1))          
 
-                                   
+        elif testType == 21:    
+            pcd_data = o3d.data.DemoICPPointClouds()
+            source = o3d.io.read_point_cloud(pcd_data.paths[0])
+            target = o3d.io.read_point_cloud(pcd_data.paths[1])
+     
+        elif testType == 22:
+            print("Load two aligned point clouds.")
+            demo_data = o3d.data.DemoFeatureMatchingPointClouds()
+            source = o3d.io.read_point_cloud(demo_data.point_cloud_paths[0])
+            target = o3d.io.read_point_cloud(demo_data.point_cloud_paths[1])
+                                              
         elif testType == 31:
             self.Print("Load customer models.")
             dataPath = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
@@ -220,7 +308,7 @@ class Matching3D:
         v_ext = axis_aligned_bounding_box.get_extent()
         print('Extension axis : %s' %str(v_ext))
         
-        return ret
+        return ret      
     
     def Downsample(self, pcd):
         # reduce num of points
@@ -243,6 +331,93 @@ class Matching3D:
         o3d.visualization.draw([inlier_cloud, outlier_cloud])
         
         return True
+     
+    def PrepareDataset(self, pcd):
+        # prepares edge hash and also reverse 
+        edgeDict, distDict = distance_hash_python(pcd.points)
+        
+        # extract pairs and build adjacency
+        point_num = len(pcd.points)
+        pairs    = distDict.keys()
+        adjMtrx  = adjacency_matrix(pairs, point_num)
+        
+        return edgeDict, distDict, adjMtrx
+            
+     
+    def MakeHashAndMatch(self):
+        # computes hash functions for source and target
+        self.dstDist = distance_hash_python(self.dstObj3d.points)
+        self.srcDist = distance_hash_python(self.srcObj3d.points)
+        
+        # assume that src is smaller
+        dist_points = list(self.srcDist.keys())[1]
+        sij     = self.srcDist[dist_points]
+           
+        dij     = get_match_pairs(self.dstDist, dist_points)
+        #if isinstance(pairs_jk_est[k],list):
+        #print()
+        print("set sij:",sij)
+        print("set dij:",dij)
+        
+        self.srcObj3d = self.ColorSpecificPoints(self.srcObj3d, sij, [1,0,0])
+        self.dstObj3d = self.ColorSpecificPoints(self.dstObj3d, dij, [0,1,0])
+            
+        return 
+        
+    def PreprocessAndMatch(self):
+        # computes hash functions for source and target
+        self.dstDist, self.dstPairs, self.dstAdjacency = self.PrepareDataset(self.dstObj3d)
+        self.srcDist, self.srcPairs, self.srcAdjacency = self.PrepareDataset(self.srcObj3d)
+        
+        # extract distances for the designated points
+        snodes      = [1,2,3]
+        sshift      = np.roll(snodes,-1) #snodes[1:] + snodes[:1]  # shift nodes by 1
+        spairs      = [(snodes[k],sshift[k]) for k in range(3)]
+        
+        # matching the first cycle
+        match_dict = {}
+        count_dict = {}
+        pairs_dict = {}
+        count_cycle = 0
+        for sij in spairs:
+            sdist        = self.srcPairs[sij]  # extract distance
+            dij_list     = get_match_pairs(self.dstDist, sdist)
+            for (i,j) in dij_list:
+                if count_cycle == 0:
+                    count_dict[i] = count_cycle  # starting point
+                    
+                # if previous entry exists - could be a cycle
+                cnt = count_dict.get(i)      
+                if cnt is None:
+                    continue
+                # if it equals to the cycle count - add to the list
+                if cnt == (count_cycle - 1):           
+                    add_value(match_dict, i, j) # list of connections                   
+                    count_dict[j] = count_cycle + 1 # next point
+
+            count_cycle += 1 
+
+            print("set sij:",sij)
+            print("set dij:",dij_list)
+        
+        #self.srcObj3d = self.ColorSpecificPoints(self.srcObj3d, sij, [1,0,0])
+        #self.dstObj3d = self.ColorSpecificPoints(self.dstObj3d, dij, [0,1,0])
+            
+        return 
+        
+        
+        
+        
+    def ColorSpecificPoints(self, pcd, pairs_ij, clr = [0, 1, 0]):   
+        self.Print('Colors specific points and the rest are gray') 
+        pcd.paint_uniform_color([0.6, 0.6, 0.6])
+        if pairs_ij is None:
+            return pcd
+        
+        idx = [s[0] for s in pairs_ij]
+        np.asarray(pcd.colors)[idx, :] = clr
+        
+        return pcd
         
     def ShowData3D(self, src, dst, transformation = None, wname = 'Source'):
         # show 3D data
@@ -259,8 +434,8 @@ class Matching3D:
         
         source_temp = copy.deepcopy(src)
         target_temp = copy.deepcopy(dst)
-        source_temp.paint_uniform_color([0.9, 0.1, 0])
-        target_temp.paint_uniform_color([0, 0.9, 0.1])
+        #source_temp.paint_uniform_color([0.9, 0.1, 0])
+        #target_temp.paint_uniform_color([0, 0.9, 0.1])
         #source_temp.transform(transformation)
         o3d.visualization.draw([source_temp, target_temp])
         #o3d.visualization.draw_geometries([source_temp, target_temp], window_name = wname)
@@ -271,20 +446,6 @@ class Matching3D:
         #                               up=[-0.2779, -0.9482, 0.1556])        
         return True
     
-    def ComputeKeypoints(self,pcd):
-        # compute key points of the pcloud
-        tic = time.time()
-        keypoints = o3d.geometry.keypoint.compute_iss_keypoints(pcd)
-        toc = 1000 * (time.time() - tic)
-        print("ISS Computation took {:.0f} [ms]".format(toc))
-
-        #mesh.compute_vertex_normals()
-        pcd.paint_uniform_color([0.5, 0.5, 0.5])
-        keypoints.paint_uniform_color([1.0, 0.75, 0.0])
-        o3d.visualization.draw_geometries([keypoints, pcd])
-        return keypoints    
-        
-    def MatchICP(self):
         # point-to-point ICP for refinement
         self.Print("Perform point-to-point ICP refinement")
         
@@ -299,8 +460,6 @@ class Matching3D:
         #self.ShowData3D(source, target, reg_p2p.transformation)
         print(reg_p2p.transformation)
         return reg_p2p.transformation
-    
-     
 
     def Finish(self):
         
@@ -309,16 +468,7 @@ class Matching3D:
         
     def Print(self, txt='',level='I'):
         print('%s: 3DM: %s' %(level, txt))
-"""         if level == 'I':
-            ptxt = 'I: 3DM: %s' % txt
-            #logging.info(ptxt)  
-        if level == 'W':
-            ptxt = 'W: 3DM: %s' % txt
-            #logging.warning(ptxt)  
-        if level == 'E':
-            ptxt = 'E: 3DM: %s' % txt
-            #logging.error(ptxt)       
-        print(ptxt) """
+
         
        
 #%% --------------------------           
@@ -370,20 +520,38 @@ class TestMatching3D(unittest.TestCase):
         # statistics about the data  
         d           = Matching3D()
         isOk        = d.SelectTestCase(11)
-        
+    
         d.DataStatistics(d.srcObj3d)
         d.DataStatistics(d.dstObj3d)
         d.ShowData3D(d.srcObj3d,d.dstObj3d)
         self.assertTrue(isOk)                             
         
-    def test_MatchP2P(self):
-        # check ICP P2P matching  
+    def test_MatchICP(self):
+        # check ICP
         d           = Matching3D()
-        isOk        = d.SelectTestCase(1)
+        isOk        = d.SelectTestCase(4)
         d.ShowData3D(d.srcObj3d,d.dstObj3d)
         transformation = d.MatchP2P()
         d.ShowData3D(d.srcObj3d,d.dstObj3d, transformation)
-        self.assertTrue(isOk)             
+        self.assertTrue(isOk)  
+        
+    def test_MatchPairs(self):
+        # check Hash matching for a single pair
+        d           = Matching3D()
+        isOk        = d.SelectTestCase(11)
+        
+        d.MakeHashAndMatch()
+        d.ShowData3D(d.srcObj3d,d.dstObj3d)
+        self.assertTrue(isOk)    
+        
+    def test_PreprocessAndMatch(self):
+        # match cycle 
+        d           = Matching3D()
+        isOk        = d.SelectTestCase(1)
+        
+        d.PreprocessAndMatch()
+        #d.ShowData3D(d.srcObj3d,d.dstObj3d)
+        self.assertTrue(isOk)                        
         
 
 
@@ -401,8 +569,9 @@ if __name__ == '__main__':
 #    singletest.addTest(TestMatching3D("test_Transform"))
 #    singletest.addTest(TestMatching3D("test_RemoveOutliers"))
 #    singletest.addTest(TestMatching3D("test_Downsample"))
-    singletest.addTest(TestMatching3D("test_Statistics"))  
-#    singletest.addTest(TestMatching3D("test_MatchP2P"))
+#    singletest.addTest(TestMatching3D("test_Statistics"))  
+#    singletest.addTest(TestMatching3D("test_MatchPairs"))
+    singletest.addTest(TestMatching3D("test_PreprocessAndMatch"))
   
     
     unittest.TextTestRunner().run(singletest)

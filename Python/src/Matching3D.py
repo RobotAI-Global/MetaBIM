@@ -73,11 +73,11 @@ def get_test_vertex(vtype = 1):
         point_data = np.random.rand(10,3)*100        
 
     elif vtype == 11: # random with 1 match
-        point_data = np.random.rand(256,3)*100
+        point_data = np.random.rand(64,3)*100
 
     elif vtype == 12: # random with 2 matches
-        point_data = np.random.rand(10,3)*10
-        point_data = np.vstack((point_data,point_data[::-1,:]+10))
+        point_data = np.random.rand(256,3)*1000
+        point_data = np.vstack((point_data,point_data[::-1,:]+2))
     
     else:
         ValueError('bad vtype')
@@ -263,7 +263,7 @@ class Matching3D:
             
         elif testType == 11:
             self.Print("one point cloud is a part of the other.")
-            point_data  = get_test_vertex(10)
+            point_data  = get_test_vertex(11)
             target      = get_pcd_from_vertex(point_data)
             target.paint_uniform_color([0.8, 0.1, 0.1]) 
             point_data  = point_data[:7,:]
@@ -273,12 +273,12 @@ class Matching3D:
             
         elif testType == 12:
             self.Print("one point cloud is a part of the other with noise.")
-            point_data  = get_test_vertex(11)
+            point_data  = get_test_vertex(12)
             target      = get_pcd_from_vertex(point_data)
             target.paint_uniform_color([0.8, 0.1, 0.1]) 
             point_data  = point_data[:7,:]
             source      = get_pcd_from_vertex(point_data)
-            source      = apply_noise(source, 0, 0.1)
+            source      = apply_noise(source, 0, 0.01)
             source.paint_uniform_color([0.1, 0.8, 0.1]) 
             source.translate((1, 1, 1))          
 
@@ -361,7 +361,6 @@ class Matching3D:
         
         return edgeDict, distDict, adjMtrx
             
-     
     def MakeHashAndMatch(self):
         # computes hash functions for source and target
         self.dstDist = distance_hash_python(self.dstObj3d.points)
@@ -434,6 +433,7 @@ class Matching3D:
         spairs      = [(snodes[k],sshift[k]) for k in range(3)]
 
         # move over from point to point and store all possible matches
+        t_start     = time.time()
         cycle_list  = []
         count_cycle = 0
         for sjk in spairs:
@@ -449,13 +449,22 @@ class Matching3D:
             # store pairs for traceback
             cycle_list.append(dpairs_ij)
             count_cycle += 1 
-            print("set dij:",dpairs_ij)
+            print("set dij:\n",dpairs_ij)
+        
+        # check
+        if dpairs_ij is None:
+            self.Print('Failed to find cycles')
+            return False
             
-        # extract cycles
-        dpairs_ii = cycle_list[-1]
+        # extract closed cycles
+        dpairs_ij = cycle_list[-1]
+        dpairs_ii = {dii:dpairs_ij[dii] for dii in dpairs_ij if dii[0]==dii[1]}
+        
         spairs_ii = {(snodes[0],snodes[0]) : snodes}
-        print("scycle dii:",spairs)
+        print("scycle dii:",spairs_ii)
         print("dcycle dii:",dpairs_ii)
+        t_stop      = time.time()
+        print('Match time : %4.3f [sec]' %(t_stop - t_start))
         
         self.srcObj3d = self.ColorCyles(self.srcObj3d, spairs_ii, [1,0,0])
         self.dstObj3d = self.ColorCyles(self.dstObj3d, dpairs_ii, [0,1,0])
@@ -478,7 +487,7 @@ class Matching3D:
     
     def ColorCyles(self, pcd, cycle_ii, clr = [0, 1, 0]):   
         # cycle_ii is a dictionary with cycle per point
-        self.Print('Colors point cycles and the rest are gray') 
+        #self.Print('Colors point cycles and the rest are gray') 
         pcd.paint_uniform_color([0.6, 0.6, 0.6])
         if cycle_ii is None:
             return pcd
@@ -626,13 +635,10 @@ class TestMatching3D(unittest.TestCase):
     def test_MatchCycle3(self):
         # match cycle 
         d           = Matching3D()
-        isOk        = d.SelectTestCase(3)
-        
-        t_start     = time.time()
+        isOk        = d.SelectTestCase(12)
+ 
         isOk        = d.MatchCycle3()
-        t_stop      = time.time()
-        print('Match time : %4.3f [sec]' %(t_stop - t_start))
-        
+
         d.ShowData3D(d.srcObj3d,d.dstObj3d)
         self.assertTrue(isOk) 
 

@@ -73,7 +73,7 @@ def get_test_vertex(vtype = 1):
         point_data = np.random.rand(10,3)*100        
 
     elif vtype == 11: # random with 1 match
-        point_data = np.random.rand(32,3)*100
+        point_data = np.random.rand(256,3)*100
 
     elif vtype == 12: # random with 2 matches
         point_data = np.random.rand(10,3)*10
@@ -157,6 +157,22 @@ def get_match_pairs(dist_hash, dist_points):
     pairs = dist_hash.get(dkey)
     return pairs
 
+def dict_intersect(pairs_ij, pairs_jk):
+    # intersect common indices of the sets
+    # make all the combinations when the first and last column matches
+    
+    pairs_ik = {}
+    
+    for sij in pairs_ij:
+        for sjk in pairs_jk:
+            if sij[1] == sjk[0]:
+                prev_node_list = pairs_ij[sij]
+                prev_node_list.append(sij[1])
+                #prev_node_list = sij[1]
+                add_value(pairs_ik,(sij[0] ,sjk[1]),prev_node_list)
+
+    return pairs_ik
+
 def radius_search(pcd, point_coord = [0,0,0], search_dist = 0.2):
     # search by radius
     print("Find the neighbors of %s point with distance less than %d"  %(str(point_coord),search_dist ))
@@ -212,7 +228,7 @@ class Matching3D:
         # loads 3D data by test specified
         ret = False
         if testType == 1:    
-            point_data  = get_test_vertex(1)
+            point_data  = get_test_vertex(1)*10
             source      = get_pcd_from_vertex(point_data)
             source.translate((1, 1, 1))
             source.paint_uniform_color([0.1, 0.8, 0.1])
@@ -220,10 +236,12 @@ class Matching3D:
             target.paint_uniform_color([0.8, 0.1, 0.1])
      
         elif testType == 2:
-            print("Load two aligned point clouds.")
-            demo_data = o3d.data.DemoFeatureMatchingPointClouds()
-            source = o3d.io.read_point_cloud(demo_data.point_cloud_paths[0])
-            target = o3d.io.read_point_cloud(demo_data.point_cloud_paths[1])
+            point_data  = get_test_vertex(10)
+            source      = get_pcd_from_vertex(point_data)
+            source.translate((1, 1, 1))
+            source.paint_uniform_color([0.1, 0.8, 0.1])
+            target      = get_pcd_from_vertex(point_data)
+            target.paint_uniform_color([0.8, 0.1, 0.1])
             
         elif testType == 3:
             point_data  = get_test_vertex(11)
@@ -405,7 +423,46 @@ class Matching3D:
             
         return 
         
+    def MatchCycle3(self):
+        # match in several steps
+        self.dstDist, self.dstPairs, self.dstAdjacency = self.PrepareDataset(self.dstObj3d)
+        self.srcDist, self.srcPairs, self.srcAdjacency = self.PrepareDataset(self.srcObj3d)
         
+        # extract distances for the designated points
+        snodes      = [1,2,3]
+        sshift      = np.roll(snodes,-1) #snodes[1:] + snodes[:1]  # shift nodes by 1
+        spairs      = [(snodes[k],sshift[k]) for k in range(3)]
+
+        # move over from point to point and store all possible matches
+        cycle_list  = []
+        count_cycle = 0
+        for sjk in spairs:
+            
+            dist_jk        = self.srcPairs[sjk]  # extract distance
+            dpairs_jk      = get_match_pairs(self.dstDist, dist_jk)
+            # init ij - first point
+            if count_cycle == 0:
+                # use dictionary to trace cycles
+                dpairs_ij = {djk:[djk[0]] for djk in dpairs_jk}  # starting point
+            else:
+                dpairs_ij = dict_intersect(dpairs_ij, dpairs_jk)
+            # store pairs for traceback
+            cycle_list.append(dpairs_ij)
+            count_cycle += 1 
+            print("set dij:",dpairs_ij)
+            
+        # extract cycles
+        dpairs_ii = cycle_list[-1]
+        spairs_ii = {(snodes[0],snodes[0]) : snodes}
+        print("scycle dii:",spairs)
+        print("dcycle dii:",dpairs_ii)
+        
+        self.srcObj3d = self.ColorCyles(self.srcObj3d, spairs_ii, [1,0,0])
+        self.dstObj3d = self.ColorCyles(self.dstObj3d, dpairs_ii, [0,1,0])
+            
+        return True
+        
+                
         
         
     def ColorSpecificPoints(self, pcd, pairs_ij, clr = [0, 1, 0]):   
@@ -416,6 +473,19 @@ class Matching3D:
         
         idx = [s[0] for s in pairs_ij]
         np.asarray(pcd.colors)[idx, :] = clr
+        
+        return pcd
+    
+    def ColorCyles(self, pcd, cycle_ii, clr = [0, 1, 0]):   
+        # cycle_ii is a dictionary with cycle per point
+        self.Print('Colors point cycles and the rest are gray') 
+        pcd.paint_uniform_color([0.6, 0.6, 0.6])
+        if cycle_ii is None:
+            return pcd
+        
+        for p in cycle_ii.keys():
+            idx = cycle_ii[p]
+            np.asarray(pcd.colors)[idx, :] = clr
         
         return pcd
         
@@ -553,7 +623,18 @@ class TestMatching3D(unittest.TestCase):
         #d.ShowData3D(d.srcObj3d,d.dstObj3d)
         self.assertTrue(isOk)                        
         
-
+    def test_MatchCycle3(self):
+        # match cycle 
+        d           = Matching3D()
+        isOk        = d.SelectTestCase(3)
+        
+        t_start     = time.time()
+        isOk        = d.MatchCycle3()
+        t_stop      = time.time()
+        print('Match time : %4.3f [sec]' %(t_stop - t_start))
+        
+        d.ShowData3D(d.srcObj3d,d.dstObj3d)
+        self.assertTrue(isOk) 
 
 #%%
 if __name__ == '__main__':
@@ -571,7 +652,8 @@ if __name__ == '__main__':
 #    singletest.addTest(TestMatching3D("test_Downsample"))
 #    singletest.addTest(TestMatching3D("test_Statistics"))  
 #    singletest.addTest(TestMatching3D("test_MatchPairs"))
-    singletest.addTest(TestMatching3D("test_PreprocessAndMatch"))
+#    singletest.addTest(TestMatching3D("test_PreprocessAndMatch"))
+    singletest.addTest(TestMatching3D("test_MatchCycle3"))
   
     
     unittest.TextTestRunner().run(singletest)

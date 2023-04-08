@@ -30,7 +30,7 @@ import laspy
 import time
 #import cv2 as cv
 #import json
-import copy
+#import copy
 
 import unittest
 
@@ -89,7 +89,7 @@ def get_pcd_from_vertex(point_data):
 
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(point_data)
-    #pcd.paint_uniform_color([0.3, 0.3, 0.3])
+    pcd.paint_uniform_color([0.3, 0.3, 0.3])
     #o3d.visualization.draw([pcd])
     return pcd
 
@@ -132,7 +132,6 @@ def distance_hash_python(points):
 
     return dist_dict, pairs_dict
 
-    
 def adjacency_matrix(edge_list, num_of_nodes):
     # Basic constructor method :  Convert edge list to adjacency list
     
@@ -173,18 +172,7 @@ def dict_intersect(pairs_ij, pairs_jk):
 
     return pairs_ik
 
-def radius_search(pcd, point_coord = [0,0,0], search_dist = 0.2):
-    # search by radius
-    print("Find the neighbors of %s point with distance less than %d"  %(str(point_coord),search_dist ))
-    
-    pcd_tree = o3d.geometry.KDTreeFlann(pcd)
-    [k, idx, _] = pcd_tree.search_radius_vector_3d(point_coord, search_dist)
-    np.asarray(pcd.colors)[idx[1:], :] = [0, 1, 0]
 
-    print("Displaying the point cloud ...\n")
-    o3d.visualization.draw([pcd])
-
-def knn_search():
     print("Loading pointcloud ...")
     sample_pcd = o3d.data.PCDPointCloud()
     pcd = o3d.io.read_point_cloud(sample_pcd.path)
@@ -198,6 +186,40 @@ def knn_search():
 
     print("Displaying the final point cloud ...\n")
     o3d.visualization.draw([pcd])
+
+def find_closest_points(pcd, point_coord = [0,0,0], min_dist = 1, max_dist = 100, point_num = 10):
+    # find closest points
+   # search by radius
+    print("Find %d neighbors of %s point with distance less than %d"  %(point_num,str(point_coord),max_dist ))
+
+    pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+    
+    #[k, idx, _] = pcd_tree.search_knn_vector_3d(pcd.points[0], point_num)
+    #np.asarray(pcd.colors)[idx[1:], :] = [0, 0, 1]
+    
+    #print("Find its neighbors with distance less than X, and paint them green.")
+    #print("Find its Y nearest neighbors, and paint them blue.")    
+    #[k, idx_dist_max, _] = pcd_tree.search_hybrid_vector_3d(np.array(point_coord), radius = max_dist, max_nn = point_num)
+    [k, idx_dist_max, _] = pcd_tree.search_radius_vector_3d(point_coord, max_dist)
+    np.asarray(pcd.colors)[idx_dist_max[1:], :] = [0, 1, 0]
+    print('Point number %d at max distance %d ' %(len(idx_dist_max),max_dist))
+    
+    [k, idx_dist_min, _] = pcd_tree.search_radius_vector_3d(point_coord, min_dist)
+    np.asarray(pcd.colors)[idx_dist_min[1:], :] = [0, 0, 1]    
+    print('Point number %d at min distance %d ' %(len(idx_dist_min),min_dist))
+
+    #[k, idx_num, _] = pcd_tree.search_knn_vector_3d(point_coord, point_num)
+    #np.asarray(pcd.colors)[idx_num[1:], :] = [0, 0, 1]
+    
+    # difference betwee all the indices
+    #idx          = np.array(set(idx_dist_max) ^ set(idx_dist_min))
+    idx          = [x for x in idx_dist_max if x not in idx_dist_min[1:]]
+    
+    # select points
+    idx          = idx[: np.minimum(len(idx),point_num)]
+    pcd_knn      = pcd.select_by_index(idx)
+    
+    return pcd_knn, idx
 
 
 #%% Deals with multuple templates
@@ -220,7 +242,12 @@ class Matching3D:
         self.dstPairs           = None   # pairs hash for target (inverse index of dstDist)
         
         self.srcAdjacency       = None   # adjacency mtrx for source
-        self.dstAdjacency       = None   # adjacency mtrx for target        
+        self.dstAdjacency       = None   # adjacency mtrx for target 
+        
+        self.srcC               = None   # center vector 
+        self.srcE               = None   # extension vector 
+        self.dstC               = None   # center vector 
+        self.dstE               = None   # extension vector        
                
         self.Print('3D-Manager is created')
         
@@ -325,15 +352,26 @@ class Matching3D:
         axis_aligned_bounding_box.color = (1, 0, 0)
         v_ext = axis_aligned_bounding_box.get_extent()
         print('Extension axis : %s' %str(v_ext))
+        v_center = axis_aligned_bounding_box.get_center()
+        print('Center coordinates : %s' %str(v_center))
         
-        return ret      
+        return v_center,  v_ext    
     
     def Downsample(self, pcd):
         # reduce num of points
-        print("Downsample the point cloud with a voxel of 0.02")
-        voxel_down_pcd = pcd.voxel_down_sample(voxel_size=100.5)
-        o3d.visualization.draw([voxel_down_pcd])
-        return voxel_down_pcd
+        
+        #
+        #voxel_down_pcd = pcd.voxel_down_sample(voxel_size=100.5)
+        sample_rate = int(len(pcd.points)/10000)
+        if sample_rate > 1:
+            down_pcd = pcd.uniform_down_sample(sample_rate)
+            self.Print('Downsampling data by factor %d' %sample_rate)
+        else:
+            down_pcd = pcd
+            self.Print("No Downsample of the point cloud")
+            
+        o3d.visualization.draw([down_pcd])
+        return down_pcd
     
     def RemoveOutliers(self, pcd):
         # remove outlier points        
@@ -381,56 +419,34 @@ class Matching3D:
             
         return 
         
-    def PreprocessAndMatch(self):
+    def Preprocess(self):
         # computes hash functions for source and target
+        self.dstObj3d = self.Downsample(self.dstObj3d)
+        self.srcObj3d = self.Downsample(self.srcObj3d)
+        
+        # compute different structures
         self.dstDist, self.dstPairs, self.dstAdjacency = self.PrepareDataset(self.dstObj3d)
         self.srcDist, self.srcPairs, self.srcAdjacency = self.PrepareDataset(self.srcObj3d)
         
-        # extract distances for the designated points
-        snodes      = [1,2,3]
-        sshift      = np.roll(snodes,-1) #snodes[1:] + snodes[:1]  # shift nodes by 1
-        spairs      = [(snodes[k],sshift[k]) for k in range(3)]
+        # center and dimensions
+        self.srcC, self.srcE = self.DataStatistics(self.srcObj3d)
+        self.dstC, self.dstE = self.DataStatistics(self.dstObj3d)        
+    
+        return True
         
-        # matching the first cycle
-        match_dict = {}
-        count_dict = {}
-        pairs_dict = {}
-        count_cycle = 0
-        for sij in spairs:
-            sdist        = self.srcPairs[sij]  # extract distance
-            dij_list     = get_match_pairs(self.dstDist, sdist)
-            for (i,j) in dij_list:
-                if count_cycle == 0:
-                    count_dict[i] = count_cycle  # starting point
-                    
-                # if previous entry exists - could be a cycle
-                cnt = count_dict.get(i)      
-                if cnt is None:
-                    continue
-                # if it equals to the cycle count - add to the list
-                if cnt == (count_cycle - 1):           
-                    add_value(match_dict, i, j) # list of connections                   
-                    count_dict[j] = count_cycle + 1 # next point
-
-            count_cycle += 1 
-
-            print("set sij:",sij)
-            print("set dij:",dij_list)
-        
-        #self.srcObj3d = self.ColorSpecificPoints(self.srcObj3d, sij, [1,0,0])
-        #self.dstObj3d = self.ColorSpecificPoints(self.dstObj3d, dij, [0,1,0])
-            
-        return 
-        
-    def MatchCycle3(self):
+    def MatchCycle3(self, indx = []):
         # match in several steps
-        self.dstDist, self.dstPairs, self.dstAdjacency = self.PrepareDataset(self.dstObj3d)
-        self.srcDist, self.srcPairs, self.srcAdjacency = self.PrepareDataset(self.srcObj3d)
-        
-        # extract distances for the designated points
-        snodes      = [1,2,3]
+        if self.dstAdjacency is None:
+            self.Preprocess()
+
+        if len(indx) < 3:
+            # extract distances for the designated points
+            snodes      = [1,2,3]
+        else:
+            snodes      = indx
+            
         sshift      = np.roll(snodes,-1) #snodes[1:] + snodes[:1]  # shift nodes by 1
-        spairs      = [(snodes[k],sshift[k]) for k in range(3)]
+        spairs      = [(snodes[k],sshift[k]) for k in range(len(snodes))]
 
         # move over from point to point and store all possible matches
         t_start     = time.time()
@@ -470,9 +486,6 @@ class Matching3D:
         self.dstObj3d = self.ColorCyles(self.dstObj3d, dpairs_ii, [0,1,0])
             
         return True
-        
-                
-        
         
     def ColorSpecificPoints(self, pcd, pairs_ij, clr = [0, 1, 0]):   
         self.Print('Colors specific points and the rest are gray') 
@@ -632,15 +645,38 @@ class TestMatching3D(unittest.TestCase):
         #d.ShowData3D(d.srcObj3d,d.dstObj3d)
         self.assertTrue(isOk)                        
         
+    def test_FindClosestPoints(self):
+        # find KNN like points with distance  
+        d           = Matching3D()
+        # test case definition
+        points      = get_test_vertex(11)
+        pcd         = get_pcd_from_vertex(points)
+        pcd_knn, _  = find_closest_points(pcd, point_coord = [0,0,0], min_dist = 85, max_dist = 175, point_num = 5)
+
+        d.ShowData3D(pcd, pcd_knn)
+        self.assertTrue(len(pcd_knn.points) < 10)  
+        
     def test_MatchCycle3(self):
         # match cycle 
         d           = Matching3D()
-        isOk        = d.SelectTestCase(12)
- 
-        isOk        = d.MatchCycle3()
+        isOk        = d.SelectTestCase(31)
+    
+        # preprocess all the dta
+        isOk        = d.Preprocess()
+
+        # find the closest points for selection
+        min_dist   = (self.srcE.min()/10)**2
+        max_dist   = (self.srcE.max()/3)**2
+        pcd_knn, indx  = find_closest_points(d.srcObj3d, point_coord = self.srcC, min_dist = min_dist, max_dist = max_dist, point_num = 3)
+        
+        #indx        = [1,2,3,4]
+        isOk        = d.MatchCycle3(indx)
 
         d.ShowData3D(d.srcObj3d,d.dstObj3d)
         self.assertTrue(isOk) 
+        
+
+               
 
 #%%
 if __name__ == '__main__':
@@ -660,6 +696,6 @@ if __name__ == '__main__':
 #    singletest.addTest(TestMatching3D("test_MatchPairs"))
 #    singletest.addTest(TestMatching3D("test_PreprocessAndMatch"))
     singletest.addTest(TestMatching3D("test_MatchCycle3"))
-  
+#    singletest.addTest(TestMatching3D("test_FindClosestPoints"))  
     
     unittest.TextTestRunner().run(singletest)

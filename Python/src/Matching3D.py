@@ -30,8 +30,8 @@ import laspy
 import time
 #import cv2 as cv
 #import json
-#import copy
-
+import copy
+from scipy.spatial.distance import cdist
 import unittest
 
 #%% Help functions
@@ -101,9 +101,9 @@ def apply_noise(pcd, mu = 0, sigma = 1):
     return noisy_pcd
 
 # ======================
-def dist2key(d):
+def dist2key(d, factor = 10):
     # creates key from distance
-    k = np.round(d*10)/10
+    k = np.round(d*factor)/factor
     return k
     
 def add_value(dict_obj, key, value):
@@ -131,6 +131,24 @@ def distance_hash_python(points):
             add_value(pairs_dict,(i,j), dkey)
 
     return dist_dict, pairs_dict
+
+def distance_hash_python_fast(points):
+    # compute distances
+    dist_ij = scipy_cdist(points,points)
+    dkey_ij = dist2key(dist_ij,100)
+    dist_dict = {}
+    pairs_dict = {}
+    for i in range(len(points)):
+        for j in range(len(points)):
+        
+            #dist_ij = np.linalg.norm(points[i] - points[j])
+            #dkey = dist2key(dist_ij) #  
+            add_value(dist_dict, dkey_ij[i,j], (i,j))
+            add_value(pairs_dict,(i,j), dkey_ij[i,j])
+
+    return dist_dict, pairs_dict
+
+
 
 def adjacency_matrix(edge_list, num_of_nodes):
     # Basic constructor method :  Convert edge list to adjacency list
@@ -221,6 +239,69 @@ def find_closest_points(pcd, point_coord = [0,0,0], min_dist = 1, max_dist = 100
     
     return pcd_knn, idx
 
+def kmeans():
+    
+    from sklearn.cluster import KMeans
+    import numpy as np
+
+    # Generate some sample data
+    X = np.random.rand(100, 2)
+
+    # Initialize KMeans object with 3 clusters
+    kmeans = KMeans(n_clusters=3)
+
+    # Fit KMeans object to the data
+    kmeans.fit(X)
+
+    # Get the cluster labels
+    labels = kmeans.labels_
+
+    # Get the centroids
+    centroids = kmeans.cluster_centers_
+    
+    return centroids
+
+def numpy_vectorized(X,Y):
+    return np.sum((X[:,None,:] - Y[None,:,:])**2, axis=2)**0.5
+
+def scipy_cdist(X,Y):
+    return cdist(X,Y,metric='euclidean')
+
+def kClosestQuick(points, k) :
+    #Solution 2, quick select, Time worst O(n^2) average O(n), Space worst O(n) average O(logn)
+    n =  len(points)
+    low = 0
+    high = n - 1
+    while (low <= high) :
+        mid = partition(points, low, high)
+        if mid == k:
+            break
+        if (mid < k): 
+            low = mid + 1 
+        else :
+            high = mid - 1
+    return points[:k]
+#Partition, Time worst O(n^2) average O(n), Space O(1)
+def partition(points, low, high) :
+    pivot = points[low]
+    while (low < high) :
+        while low < high and compare(points[high], pivot) >= 0: 
+            high -= 1
+        points[low] = points[high]
+        while low < high and compare(points[low], pivot) <= 0: 
+            low += 1
+        points[high] = points[low]
+    points[low] = pivot
+    return low
+#Compare based on Euclidean distance, Time O(1), Space O(1)
+def compare(a, b) :
+    return (a[0]*a[0] + a[1]*a[1]) - (b[0]*b[0] + b[1]*b[1])
+# kmeans optimization
+def assignment_step_v5(data, centroids):
+    diff = data[:, None] - centroids[None]  # (n, k, d)
+    distances = np.einsum('nkd,nkd->nk', diff, diff)  # (n, k)
+    labels = np.argmin(distances, axis=1)  # (n,)
+    return labels
 
 #%% Deals with multuple templates
 class Matching3D:
@@ -305,7 +386,7 @@ class Matching3D:
             target.paint_uniform_color([0.8, 0.1, 0.1]) 
             point_data  = point_data[:7,:]
             source      = get_pcd_from_vertex(point_data)
-            source      = apply_noise(source, 0, 0.01)
+            #source      = apply_noise(source, 0, 0.01)
             source.paint_uniform_color([0.1, 0.8, 0.1]) 
             source.translate((1, 1, 1))          
 
@@ -323,15 +404,19 @@ class Matching3D:
         elif testType == 31:
             self.Print("Load customer models.")
             dataPath = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
-            las = laspy.read(dataPath + '\\valve.laz')
-            point_data = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
-            source = o3d.geometry.PointCloud()
-            source.points = o3d.utility.Vector3dVector(point_data)
+            las             = laspy.read(dataPath + '\\valve.laz')
+            point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
+            source          = o3d.geometry.PointCloud()
+            point_data      = point_data / 1e6 # rescale from um to m
+            source.points   = o3d.utility.Vector3dVector(point_data)
+            source.paint_uniform_color([0.5, 0.3, 0.1])
             source.translate((1, 1, 1))
-            las = laspy.read(dataPath + '\\valve.laz') # valve pressure # farm2M
-            point_data = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
-            target = o3d.geometry.PointCloud()
-            target.points = o3d.utility.Vector3dVector(point_data)
+            las             = laspy.read(dataPath + '\\valve.laz') # valve pressure # farm2M
+            point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
+            target          = o3d.geometry.PointCloud()
+            point_data      = point_data / 1e6 # rescale from um to m
+            target.points   = o3d.utility.Vector3dVector(point_data)
+            target.paint_uniform_color([0.1, 0.3, 0.5])
             
                         
         else:
@@ -359,10 +444,8 @@ class Matching3D:
     
     def Downsample(self, pcd):
         # reduce num of points
-        
-        #
         #voxel_down_pcd = pcd.voxel_down_sample(voxel_size=100.5)
-        sample_rate = int(len(pcd.points)/10000)
+        sample_rate = int(len(pcd.points)/1000)
         if sample_rate > 1:
             down_pcd = pcd.uniform_down_sample(sample_rate)
             self.Print('Downsampling data by factor %d' %sample_rate)
@@ -370,7 +453,7 @@ class Matching3D:
             down_pcd = pcd
             self.Print("No Downsample of the point cloud")
             
-        o3d.visualization.draw([down_pcd])
+        #o3d.visualization.draw([down_pcd])
         return down_pcd
     
     def RemoveOutliers(self, pcd):
@@ -390,12 +473,16 @@ class Matching3D:
      
     def PrepareDataset(self, pcd):
         # prepares edge hash and also reverse 
-        edgeDict, distDict = distance_hash_python(pcd.points)
-        
+        t_start      = time.time()
+        edgeDict, distDict = distance_hash_python_fast(pcd.points)
+                
+        t_stop      = time.time()
+        print('Dist Hash time : %4.3f [sec]' %(t_stop - t_start))
+
         # extract pairs and build adjacency
-        point_num = len(pcd.points)
-        pairs    = distDict.keys()
-        adjMtrx  = adjacency_matrix(pairs, point_num)
+        #point_num = len(pcd.points)
+        #pairs    = distDict.keys()
+        adjMtrx  = None #adjacency_matrix(pairs, point_num)
         
         return edgeDict, distDict, adjMtrx
             
@@ -433,11 +520,24 @@ class Matching3D:
         self.dstC, self.dstE = self.DataStatistics(self.dstObj3d)        
     
         return True
+    
+    def PreprocessSingle(self,pcd):
+        # computes hash functions for source and target
+        dstPcd = self.Downsample(pcd)
+        
+        # center and dimensions
+        dstC, dstE = self.DataStatistics(dstPcd)       
+        
+        # compute different structures
+        dstDist, dstPairs, dstAdjacency = self.PrepareDataset(dstPcd)
+
+        return dstPcd, dstDist, dstPairs, dstC, dstE
+    
         
     def MatchCycle3(self, indx = []):
         # match in several steps
-        if self.dstAdjacency is None:
-            self.Preprocess()
+        #if self.dstAdjacency is None:
+        #    self.Preprocess()
 
         if len(indx) < 3:
             # extract distances for the designated points
@@ -662,20 +762,43 @@ class TestMatching3D(unittest.TestCase):
         isOk        = d.SelectTestCase(31)
     
         # preprocess all the dta
-        isOk        = d.Preprocess()
+        d.dstObj3d, d.dstDist, d.dstPairs, _ , _                = d.PreprocessSingle(d.dstObj3d)
+        d.srcObj3d, d.srcDist, d.srcPairs, d.srcC, d.srcE       = d.PreprocessSingle(d.srcObj3d)
+         
 
         # find the closest points for selection
-        min_dist   = (self.srcE.min()/10)**2
-        max_dist   = (self.srcE.max()/3)**2
-        pcd_knn, indx  = find_closest_points(d.srcObj3d, point_coord = self.srcC, min_dist = min_dist, max_dist = max_dist, point_num = 3)
+        min_dist   = (d.srcE.max()/10)**2
+        max_dist   = (d.srcE.max()/3)**2
+        pcd_knn, indx  = find_closest_points(d.srcObj3d, point_coord = d.srcC, min_dist = min_dist, max_dist = max_dist, point_num = 3)
         
         #indx        = [1,2,3,4]
         isOk        = d.MatchCycle3(indx)
 
-        d.ShowData3D(d.srcObj3d,d.dstObj3d)
+        d.ShowData3D(d.srcObj3d,  d.dstObj3d)
         self.assertTrue(isOk) 
         
+    def test_Distance(self):
+        # testing didtance performance
+        #M = np.arange(6000*3, dtype=np.float64).reshape(6000,3)
+        M           = np.random.rand(10000,3)
+        print('Calculating the distance...')
+        t_start     = time.time()
+        sp_result   = scipy_cdist(M, M) #Scipy usage
+        t_stop      = time.time()
+        print('Distance time : %4.3f [sec]' %(t_stop - t_start))
+        import numpy as np
+        
+        from sklearn.neighbors import KDTree
 
+        X = np.random_sample((10, 3))  # 10 points in 3 dimensions
+        tree = KDTree(X, leaf_size=2)              
+        dist, ind = tree.query(X[:1], k=3)                
+        print(ind)  # indices of 3 closest neighbors
+
+        print(dist)  # distances to 3 closest neighbors
+
+
+    
                
 
 #%%
@@ -697,5 +820,6 @@ if __name__ == '__main__':
 #    singletest.addTest(TestMatching3D("test_PreprocessAndMatch"))
     singletest.addTest(TestMatching3D("test_MatchCycle3"))
 #    singletest.addTest(TestMatching3D("test_FindClosestPoints"))  
+#    singletest.addTest(TestMatching3D("test_Distance"))
     
     unittest.TextTestRunner().run(singletest)

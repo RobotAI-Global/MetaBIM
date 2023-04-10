@@ -148,6 +148,24 @@ def distance_hash_python_fast(points):
 
     return dist_dict, pairs_dict
 
+def distance_hash_python_knn(points, min_dist_value = 0, knn_num = 3):
+    # compute distances only on the part
+    dist_ij     = scipy_cdist(points,points)
+    dist_ij[dist_ij < min_dist_value] = 1e9
+    dkey_ij     = dist2key(dist_ij,10)
+    index_ij    = dkey_ij.argsort(axis = 1)
+    knn_num     = np.minimum(knn_num,len(points))
+   
+    dist_dict = {}
+    pairs_dict = {}
+    for i in range(len(points)):
+        for js in range(knn_num):
+        
+            j    = index_ij[i,js]
+            add_value(dist_dict, dkey_ij[i,j], (i,j))
+            add_value(pairs_dict,(i,j), dkey_ij[i,j])
+
+    return dist_dict, pairs_dict
 
 
 def adjacency_matrix(edge_list, num_of_nodes):
@@ -374,7 +392,7 @@ class Matching3D:
             point_data  = get_test_vertex(11)
             target      = get_pcd_from_vertex(point_data)
             target.paint_uniform_color([0.8, 0.1, 0.1]) 
-            point_data  = point_data[:7,:]
+            point_data  = point_data[:27,:]
             source      = get_pcd_from_vertex(point_data)
             source.paint_uniform_color([0.1, 0.8, 0.1])
             source.translate((1, 1, 1))
@@ -471,11 +489,12 @@ class Matching3D:
         
         return True
      
-    def PrepareDataset(self, pcd):
+    def PrepareDataset(self, pcd, min_dist_value = 0.0):
         # prepares edge hash and also reverse 
         t_start      = time.time()
-        edgeDict, distDict = distance_hash_python_fast(pcd.points)
-                
+        #edgeDict, distDict = distance_hash_python_fast(pcd.points)
+        edgeDict, distDict = distance_hash_python_knn(pcd.points, min_dist_value = min_dist_value, knn_num = 11)
+
         t_stop      = time.time()
         print('Dist Hash time : %4.3f [sec]' %(t_stop - t_start))
 
@@ -521,15 +540,18 @@ class Matching3D:
     
         return True
     
-    def PreprocessSingle(self,pcd):
+    def PreprocessSingle(self,pcd, factor = 10):
         # computes hash functions for source and target
         dstPcd = self.Downsample(pcd)
         
         # center and dimensions
-        dstC, dstE = self.DataStatistics(dstPcd)       
+        dstC, dstE = self.DataStatistics(dstPcd)    
+        
+        # minimal distance between points
+        min_dist   = (dstE.max()/factor)**2   
         
         # compute different structures
-        dstDist, dstPairs, dstAdjacency = self.PrepareDataset(dstPcd)
+        dstDist, dstPairs, dstAdjacency = self.PrepareDataset(dstPcd, min_dist)
 
         return dstPcd, dstDist, dstPairs, dstC, dstE
     
@@ -556,6 +578,9 @@ class Matching3D:
             
             dist_jk        = self.srcPairs[sjk]  # extract distance
             dpairs_jk      = get_match_pairs(self.dstDist, dist_jk)
+            if dpairs_jk is None:
+                dpairs_ij = None
+                break
             # init ij - first point
             if count_cycle == 0:
                 # use dictionary to trace cycles
@@ -759,19 +784,20 @@ class TestMatching3D(unittest.TestCase):
     def test_MatchCycle3(self):
         # match cycle 
         d           = Matching3D()
-        isOk        = d.SelectTestCase(31)
+        isOk        = d.SelectTestCase(11)
     
         # preprocess all the dta
-        d.dstObj3d, d.dstDist, d.dstPairs, _ , _                = d.PreprocessSingle(d.dstObj3d)
-        d.srcObj3d, d.srcDist, d.srcPairs, d.srcC, d.srcE       = d.PreprocessSingle(d.srcObj3d)
+        d.dstObj3d, d.dstDist, d.dstPairs, _ , _                = d.PreprocessSingle(d.dstObj3d, 1000)
+        # factor 1000 make min distance small and keeps all the points
+        d.srcObj3d, d.srcDist, d.srcPairs, d.srcC, d.srcE       = d.PreprocessSingle(d.srcObj3d, 1000) 
          
 
         # find the closest points for selection
-        min_dist   = (d.srcE.max()/10)**2
-        max_dist   = (d.srcE.max()/3)**2
+        min_dist   = (d.srcE.max()/100)**2
+        max_dist   = (d.srcE.max()/1)**2
         pcd_knn, indx  = find_closest_points(d.srcObj3d, point_coord = d.srcC, min_dist = min_dist, max_dist = max_dist, point_num = 3)
         
-        #indx        = [1,2,3,4]
+        #indx        = indx[1,2,3,4]
         isOk        = d.MatchCycle3(indx)
 
         d.ShowData3D(d.srcObj3d,  d.dstObj3d)

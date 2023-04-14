@@ -31,7 +31,7 @@ import time
 #import cv2 as cv
 #import json
 import copy
-from scipy.spatial.distance import cdist
+from scipy.spatial.distance import cdist, pdist, squareform
 import unittest
 
 #%% Help functions
@@ -70,7 +70,7 @@ def get_test_vertex(vtype = 1):
         )
         
     elif vtype == 10: # random with 1 match
-        point_data = np.random.rand(10,3)*100        
+        point_data = np.random.rand(10,3)*10        
 
     elif vtype == 11: # random with 1 match
         point_data = np.random.rand(64,3)*100
@@ -283,6 +283,16 @@ def numpy_vectorized(X,Y):
     return np.sum((X[:,None,:] - Y[None,:,:])**2, axis=2)**0.5
 
 def scipy_cdist(X,Y):
+    # a = np.array([[0, 0, 0],
+    #           [0, 0, 1],
+    #           [0, 1, 0],
+    #           [0, 1, 1],
+    #           [1, 0, 0],
+    #           [1, 0, 1],
+    #           [1, 1, 0],
+    #           [1, 1, 1]])
+    # b = cdist(a,a, metric='euclidean')
+    # c = squareform(pdist(a,metric='euclidean'))
     return cdist(X,Y,metric='euclidean')
 
 def kClosestQuick(points, k) :
@@ -504,27 +514,7 @@ class Matching3D:
         adjMtrx  = None #adjacency_matrix(pairs, point_num)
         
         return edgeDict, distDict, adjMtrx
-            
-    def MakeHashAndMatch(self):
-        # computes hash functions for source and target
-        self.dstDist = distance_hash_python(self.dstObj3d.points)
-        self.srcDist = distance_hash_python(self.srcObj3d.points)
-        
-        # assume that src is smaller
-        dist_points = list(self.srcDist.keys())[1]
-        sij     = self.srcDist[dist_points]
-           
-        dij     = get_match_pairs(self.dstDist, dist_points)
-        #if isinstance(pairs_jk_est[k],list):
-        #print()
-        print("set sij:",sij)
-        print("set dij:",dij)
-        
-        self.srcObj3d = self.ColorSpecificPoints(self.srcObj3d, sij, [1,0,0])
-        self.dstObj3d = self.ColorSpecificPoints(self.dstObj3d, dij, [0,1,0])
-            
-        return 
-        
+                   
     def Preprocess(self):
         # computes hash functions for source and target
         self.dstObj3d = self.Downsample(self.dstObj3d)
@@ -555,7 +545,6 @@ class Matching3D:
 
         return dstPcd, dstDist, dstPairs, dstC, dstE
     
-        
     def MatchCycle3(self, indx = []):
         # match in several steps
         #if self.dstAdjacency is None:

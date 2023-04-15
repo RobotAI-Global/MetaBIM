@@ -75,13 +75,17 @@ def get_test_vertex(vtype = 1):
         )
         
     elif vtype == 10: # random with 1 match
-        point_data = np.random.rand(10,3)*10        
+        point_data = np.random.rand(10,3)*100       
 
     elif vtype == 11: # random with 1 match
         point_data = np.random.rand(64,3)*100
 
     elif vtype == 12: # random with 2 matches
-        point_data = np.random.rand(256,3)*1000
+        point_data = np.random.rand(256,3)*100
+        point_data = np.vstack((point_data,point_data[::-1,:]+2))
+
+    elif vtype == 13: # random with 2 matches
+        point_data = np.random.rand(1024,3)*1000
         point_data = np.vstack((point_data,point_data[::-1,:]+2))
     
     else:
@@ -253,22 +257,28 @@ class MatchPointClouds:
             self.src_points = point_data + 1  # small shift to see the difference
             
         elif testType == 12:
-            self.Print("one point cloud is a part of the other with noise.")
+            self.Print("one point cloud is a part of the other .")
             point_data  = get_test_vertex(12)
             self.dst_points = point_data
             point_data  = point_data[:7,:]
             self.src_points = point_data + 1  # small shift to see the difference        
 
-                                              
+        elif testType == 13:
+            self.Print("one point cloud is a part of the other.")
+            point_data  = get_test_vertex(13)
+            self.dst_points = point_data
+            point_data  = point_data[:37,:]
+            self.src_points = point_data + 1  # small shift to see the difference  
+                                                          
         elif testType == 31:
             self.Print("Load customer models.")
             dataPath = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
             las             = laspy.read(dataPath + '\\valve.laz')
             point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
-            self.dst_points = point_data
+            self.dst_points = point_data/1000
             las             = laspy.read(dataPath + '\\valve.laz') # valve pressure # farm2M
             point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
-            self.src_points = point_data + 1  # small shift to see the difference 
+            self.src_points = point_data/1000 + 1  # small shift to see the difference 
             
                         
         else:
@@ -282,7 +292,7 @@ class MatchPointClouds:
     def Downsample(self, points):
         # reduce num of points
         #voxel_down_pcd = pcd.voxel_down_sample(voxel_size=100.5)
-        sample_rate = int(len(points)/1000)
+        sample_rate = int(len(points)/3000)
         if sample_rate > 1:
             down_points = points[::sample_rate,:]
             self.Print('Downsampling data by factor %d' %sample_rate)
@@ -306,6 +316,8 @@ class MatchPointClouds:
         # index_ij    = dkey_ij.argsort(axis = 1)
         # knn_num     = np.minimum(knn_num,len(points))
         
+        self.Print('Statistics: Max distance: %4.1f' %(dist_ij.max()))
+        
         dist_ij       = dist2key(dist_ij, self.DIST_BIN_WIDTH)
         index_i, index_j      = np.nonzero(np.logical_and(min_dist_value < dist_ij , dist_ij < max_dist_value))
     
@@ -326,7 +338,7 @@ class MatchPointClouds:
         points          = self.MakeCompact(points)
         
         # minimal distance between points
-        min_dist            = SENSOR_NOISE * 10   
+        min_dist        = SENSOR_NOISE * 2   
         
         # compute different structures from distance
         t_start      = time.time()
@@ -371,6 +383,8 @@ class MatchPointClouds:
         else:
             snodes      = indx
             
+        self.Print('Index : %s' %str(snodes))
+            
         sshift      = np.roll(snodes,-1) #snodes[1:] + snodes[:1]  # shift nodes by 1
         spairs      = [(snodes[k],sshift[k]) for k in range(len(snodes))]
 
@@ -409,7 +423,7 @@ class MatchPointClouds:
         print("scycle dii:",spairs_ii)
         print("dcycle dii:",dpairs_ii)
         t_stop      = time.time()
-        print('Match time : %4.3f [sec]' %(t_stop - t_start))
+        self.Print('Match time : %4.3f [sec]' %(t_stop - t_start))
             
         self.src_cycle         = spairs_ii   # cycle selected
         self.dst_cycle         = dpairs_ii   # cycles detected     
@@ -428,7 +442,7 @@ class MatchPointClouds:
         dst_points, dst_dist_dict, dst_pairs_dict  = self.PreprocessPointData(dst_points)
          
         # select indexes
-        src_indx = self.SelectMatchPoints(src_points, selectType = 1)
+        src_indx = self.SelectMatchPoints(src_points, selectType = 2)
 
         #indx        = indx[1,2,3,4]
         self.srcPairs   = src_pairs_dict
@@ -436,7 +450,7 @@ class MatchPointClouds:
         isOk            = self.MatchCycle3(src_indx) 
 
         
-        return
+        return True
         
     def ColorSpecificPoints(self, pcd, pairs_ij, clr = [0, 1, 0]):   
         self.Print('Colors specific points and the rest are gray') 
@@ -505,7 +519,7 @@ class MatchPointClouds:
         
     def Print(self, txt='',level='I'):
         t_stop = time.time()
-        print('%s: 3DM: %4.3f [s]: %s' %(level, t_stop-self.t_start, txt))
+        print('%s: 3DM: %4.3f: %s' %(level, t_stop-self.t_start, txt))
         self.t_start = time.time()
 
         
@@ -540,8 +554,7 @@ class TestMatchPointClouds(unittest.TestCase):
         sp_result   = scipy_cdist(M, M) #Scipy usage
         t_stop      = time.time()
         print('Distance time : %4.3f [sec]' %(t_stop - t_start))
-
-               
+            
     def test_Downsample(self):
         # test trasnformation  
         d           = MatchPointClouds()
@@ -550,12 +563,11 @@ class TestMatchPointClouds(unittest.TestCase):
         transform   = np.array([[1,0,0,1],[0,1,0,1],[0,0,1,1],[0,0,0,1]])
         d.ShowData3D(d.srcObj3d,srcDown, transform)
         self.assertTrue(isOk)  
-                                    
-        
+                                      
     def test_MatchSourceTarget(self):
         # match cycle 
         d           = MatchPointClouds()
-        isOk        = d.SelectTestCase(1)
+        isOk        = d.SelectTestCase(31)
     
         isOk        = d.MatchSourceToTarget()
 

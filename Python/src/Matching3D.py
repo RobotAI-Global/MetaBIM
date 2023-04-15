@@ -1,7 +1,7 @@
 '''
 3D Data Matching
 
-Matches 3D datasets using xgboost
+Matches 3D datasets from source to target
 
 Installation Env:
 

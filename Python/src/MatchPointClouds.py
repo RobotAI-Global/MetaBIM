@@ -36,8 +36,8 @@ from scipy.spatial.distance import cdist, pdist, squareform
 import unittest
 
 
-SENSOR_NOISE       = 1      # sensor noise in mm
-MAX_OBJECT_SIZE    = 1000   # max object size to be macthed 
+SENSOR_NOISE       = 10      # sensor noise in mm
+MAX_OBJECT_SIZE    = 3000   # max object size to be macthed 
 
 #%% Help functions
 # ======================
@@ -280,7 +280,19 @@ class MatchPointClouds:
             point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
             self.src_points = point_data/1000 + 1  # small shift to see the difference 
             
-                        
+        elif testType == 41:
+            self.Print("Load reference models...")
+            dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
+            las             = laspy.read(dataPath + '\\farm2M.laz')
+            #self.Print('Target model scale : %d' %las.header.scales) # dimensions
+            point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
+            self.dst_points = point_data/1000
+            self.Print("Load source models...")
+            las             = laspy.read(dataPath + '\\valve.laz') # valve pressure # farm2M
+            #self.Print('Search model scale : %d' %las.header.scales) # dimensions
+            point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
+            self.src_points = point_data/1000 + 1  # small shift to see the difference 
+            self.Print("Load models is done.")                        
         else:
             self.Print('Bad choice %d is selected' %testType, 'E')
             return ret    
@@ -289,10 +301,10 @@ class MatchPointClouds:
         self.Print('Data set %d is selected' %testType, 'I')
         return True    
     
-    def Downsample(self, points):
+    def Downsample(self, points, factor = 3000):
         # reduce num of points
         #voxel_down_pcd = pcd.voxel_down_sample(voxel_size=100.5)
-        sample_rate = int(len(points)/3000)
+        sample_rate = factor #int(len(points)/factor)
         if sample_rate > 1:
             down_points = points[::sample_rate,:]
             self.Print('Downsampling data by factor %d' %sample_rate)
@@ -316,7 +328,9 @@ class MatchPointClouds:
         # index_ij    = dkey_ij.argsort(axis = 1)
         # knn_num     = np.minimum(knn_num,len(points))
         
-        self.Print('Statistics: Max distance: %4.1f' %(dist_ij.max()))
+        self.Print('Statistics: Min-Max range: %4.1f - %4.1f' %(min_dist_value, max_dist_value ))
+        self.Print('Statistics:  Max distance: %4.1f' %(dist_ij.max()))
+
         
         dist_ij       = dist2key(dist_ij, self.DIST_BIN_WIDTH)
         index_i, index_j      = np.nonzero(np.logical_and(min_dist_value < dist_ij , dist_ij < max_dist_value))
@@ -330,15 +344,15 @@ class MatchPointClouds:
 
         return dist_dict, pairs_dict
 
-    def PreprocessPointData(self, points, factor = 10):
+    def PreprocessPointData(self, points, factor = 1000):
         # computes hash functions for source and target
-        points          = self.Downsample(points)
+        points          = self.Downsample(points, factor)
         
         # make it compact
         points          = self.MakeCompact(points)
         
         # minimal distance between points
-        min_dist        = SENSOR_NOISE * 2   
+        min_dist        = SENSOR_NOISE * 10   
         
         # compute different structures from distance
         t_start      = time.time()
@@ -351,7 +365,7 @@ class MatchPointClouds:
     def SelectMatchPoints(self, points, selectType = 1):
         # select the points according to different criteria   
         point_num = points.shape[0]
-        
+        indx = [1,2,3]
         if selectType == 1:
             # definien
             indx = [1,2,3]
@@ -359,6 +373,26 @@ class MatchPointClouds:
         elif selectType == 2:
              # random
             indx = np.random.randint(0, point_num, size=3)
+            
+        elif selectType == 3:
+             # random with multiple trials
+            if self.srcPairs is None:
+                self.Peint('init dataset')
+                return 
+            
+            # create cycles at randmom and check validity
+            trial_num = 90
+            while trial_num > 0:
+                trial_num = trial_num -1
+                indx = np.random.randint(0, point_num, size=3) 
+                allin = (indx[0],indx[1]) in self.srcPairs
+                allin = (indx[1],indx[2]) in self.srcPairs and allin
+                allin = (indx[2],indx[0]) in self.srcPairs and allin
+                if allin:
+                    break   
+             
+            if not allin:
+                self.Print('Failed to find a cycle','W')        
                   
         elif selectType == 11:
             # find the closest points for selection
@@ -408,7 +442,7 @@ class MatchPointClouds:
             # store pairs for traceback
             cycle_list.append(dpairs_ij)
             count_cycle += 1 
-            print("set dij:\n",dpairs_ij)
+            #print("set dij:\n",dpairs_ij)
         
         # check
         if dpairs_ij is None:
@@ -428,7 +462,9 @@ class MatchPointClouds:
         self.src_cycle         = spairs_ii   # cycle selected
         self.dst_cycle         = dpairs_ii   # cycles detected     
             
-        return True
+        isDetected              = len(dpairs_ii) > 0
+        
+        return isDetected
         
     def MatchSourceToTarget(self, src_points = None, dst_points = None):
         # main processing and matching
@@ -436,17 +472,19 @@ class MatchPointClouds:
             src_points, dst_points = self.src_points, self.dst_points
         
         # preprocess all the dta
-        src_points, src_dist_dict, src_pairs_dict  = self.PreprocessPointData(src_points)
+        src_points, src_dist_dict, src_pairs_dict  = self.PreprocessPointData(src_points, 200)
         
         # factor 1000 make min distance small and keeps all the points
-        dst_points, dst_dist_dict, dst_pairs_dict  = self.PreprocessPointData(dst_points)
+        dst_points, dst_dist_dict, dst_pairs_dict  = self.PreprocessPointData(dst_points, 50)
+    
+        # need to do selection
+        self.srcPairs   = src_pairs_dict
+        self.dstDist    = dst_dist_dict     
          
         # select indexes
-        src_indx = self.SelectMatchPoints(src_points, selectType = 2)
+        src_indx = self.SelectMatchPoints(src_points, selectType = 3)
 
-        #indx        = indx[1,2,3,4]
-        self.srcPairs   = src_pairs_dict
-        self.dstDist    = dst_dist_dict
+        # match according to indexes
         isOk            = self.MatchCycle3(src_indx) 
 
         
@@ -466,7 +504,7 @@ class MatchPointClouds:
     def ColorCyles(self, pcd, cycle_ii, clr = [0, 1, 0]):   
         # cycle_ii is a dictionary with cycle per point
         #self.Print('Colors point cycles and the rest are gray') 
-        pcd.paint_uniform_color([0.6, 0.6, 0.6])
+        #pcd.paint_uniform_color([0.6, 0.6, 0.6])
         if cycle_ii is None:
             return pcd
         
@@ -491,12 +529,12 @@ class MatchPointClouds:
             return
         
         # convert
-        src_pcd = get_pcd_from_vertex(self.src_points, clr = [0.8, 0.4, 0.1] )
-        dst_pcd = get_pcd_from_vertex(self.dst_points, clr = [0.4, 0.8, 0.1] )
+        src_pcd = get_pcd_from_vertex(self.src_points, clr = [0.8, 0.1, 0.1] )
+        dst_pcd = get_pcd_from_vertex(self.dst_points, clr = [0.1, 0.8, 0.1] )
        
         # color cycles
-        src_pcd = self.ColorCyles(src_pcd, self.src_cycle, [1,0,0])
-        dst_pcd = self.ColorCyles(dst_pcd, self.dst_cycle, [0,1,0])    
+        src_pcd = self.ColorCyles(src_pcd, self.src_cycle, [1,0,1])
+        dst_pcd = self.ColorCyles(dst_pcd, self.dst_cycle, [0,1,1])    
 
 
         #source_temp.paint_uniform_color([0.9, 0.1, 0])
@@ -567,7 +605,7 @@ class TestMatchPointClouds(unittest.TestCase):
     def test_MatchSourceTarget(self):
         # match cycle 
         d           = MatchPointClouds()
-        isOk        = d.SelectTestCase(31)
+        isOk        = d.SelectTestCase(41)
     
         isOk        = d.MatchSourceToTarget()
 

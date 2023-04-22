@@ -36,8 +36,7 @@ from scipy.spatial.distance import cdist, pdist, squareform
 import unittest
 
 
-SENSOR_NOISE       = 10      # sensor noise in mm
-MAX_OBJECT_SIZE    = 3000   # max object size to be macthed 
+
 
 #%% Help functions
 # ======================
@@ -109,6 +108,41 @@ def apply_noise(pcd, mu = 0, sigma = 1):
     noisy_pcd.points = o3d.utility.Vector3dVector(points)
     return noisy_pcd
 
+def find_closest_points(point_data, point_coord = [0,0,0],  max_dist = 100):
+    # find closest points
+   # search by radius
+    print("Find neighbors of %s point with distance less than %d"  %(str(point_coord),max_dist ))
+
+    pcd      = get_pcd_from_vertex(point_data)
+    pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+    
+    #[k, idx, _] = pcd_tree.search_knn_vector_3d(pcd.points[0], point_num)
+    #np.asarray(pcd.colors)[idx[1:], :] = [0, 0, 1]
+    
+    #print("Find its neighbors with distance less than X, and paint them green.")
+    #print("Find its Y nearest neighbors, and paint them blue.")    
+    #[k, idx_dist_max, _] = pcd_tree.search_hybrid_vector_3d(np.array(point_coord), radius = max_dist, max_nn = point_num)
+    [k, idx_dist_max, _] = pcd_tree.search_radius_vector_3d(point_coord, max_dist)
+    #np.asarray(pcd.colors)[idx_dist_max[1:], :] = [0, 1, 0]
+    print('Point number %d at max distance %d ' %(len(idx_dist_max),max_dist))
+    
+    # [k, idx_dist_min, _] = pcd_tree.search_radius_vector_3d(point_coord, min_dist)
+    # np.asarray(pcd.colors)[idx_dist_min[1:], :] = [0, 0, 1]    
+    # print('Point number %d at min distance %d ' %(len(idx_dist_min),min_dist))
+
+    #[k, idx_num, _] = pcd_tree.search_knn_vector_3d(point_coord, point_num)
+    #np.asarray(pcd.colors)[idx_num[1:], :] = [0, 0, 1]
+    
+    # difference betwee all the indices
+    #idx          = np.array(set(idx_dist_max) ^ set(idx_dist_min))
+    #idx          = [x for x in idx_dist_max if x not in idx_dist_min[1:]]
+    
+    # select points
+    #idx          = idx[: np.minimum(len(idx),point_num)]
+    #pcd_knn      = pcd.select_by_index(idx)
+    point_data_indx = point_data[idx_dist_max, :]
+    return point_data_indx
+
 # ======================
 def dist2key(d, factor = 10):
     # creates key from distance
@@ -130,8 +164,11 @@ def add_value(dict_obj, key, value):
 def get_match_pairs(dist_hash, dist_points):
     # extract matching pairs from hash dictionary
     #dist_points = np.linalg.norm(points[i] - points[j])
-    dkey  = dist2key(dist_points) #np.round(dist_points*10)/10
+    dkey  = dist_points #dist2key(dist_points) #np.round(dist_points*10)/10
     pairs = dist_hash.get(dkey)
+    if len(pairs) > 1000:
+        print('Too many matches - consider to reduce bin size')
+        
     return pairs
 
 def dict_intersect(pairs_ij, pairs_jk):
@@ -139,6 +176,8 @@ def dict_intersect(pairs_ij, pairs_jk):
     # make all the combinations when the first and last column matches
     
     pairs_ik = {}
+    if len(pairs_ij) > 1000 and len(pairs_jk) > 1000:
+        print('too many pairs to match')
     
     for sij in pairs_ij:
         for sjk in pairs_jk:
@@ -150,20 +189,22 @@ def dict_intersect(pairs_ij, pairs_jk):
 
     return pairs_ik
 
+def dict_intersect_cycle(cycle_ij, pairs_jk):
+    # intersect common indices of the sets
+    # make all the combinations when the first and last column matches
+    
+    cycle_ijk = {}
+    if len(pairs_jk) > 1000:
+        print('too many pairs to match. bin width is too wide')
+    
+    for sij in cycle_ij:
+        for sjk in pairs_jk:
+            if sij[-1] == sjk[0]:
+                cycle_key = sij[:-1] + sjk
+                cycle_ijk[cycle_key] = 1
 
-    print("Loading pointcloud ...")
-    sample_pcd = o3d.data.PCDPointCloud()
-    pcd = o3d.io.read_point_cloud(sample_pcd.path)
-    pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+    return cycle_ijk
 
-    print(
-        "Find the 2000 nearest neighbors of 50000th point, and painting them red ..."
-    )
-    [k, idx, _] = pcd_tree.search_knn_vector_3d(pcd.points[50000], 2000)
-    np.asarray(pcd.colors)[idx[1:], :] = [1, 0, 0]
-
-    print("Displaying the final point cloud ...\n")
-    o3d.visualization.draw([pcd])
 
 def numpy_vectorized(X,Y):
     return np.sum((X[:,None,:] - Y[None,:,:])**2, axis=2)**0.5
@@ -192,6 +233,12 @@ class MatchPointClouds:
         self.debugOn            = True
         self.figNum             = 1      # control names of the figures
         self.t_start            = time.time()
+        
+        self.SENSOR_NOISE       = 1      # sensor noise in mm
+        self.MAX_OBJECT_SIZE    = 3000   # max object size to be macthed 
+        
+        self.SRC_DOWNSAMPLE     = 1     # downsample the sourcs model
+        self.DST_DOWNSAMPLE     = 1     # downsample the target model
         
         # param
         # DIST_BIN_WIDTH helps to assign multiple distances to the same bin. 
@@ -279,20 +326,126 @@ class MatchPointClouds:
             las             = laspy.read(dataPath + '\\valve.laz') # valve pressure # farm2M
             point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
             self.src_points = point_data/1000 + 1  # small shift to see the difference 
+                        
+            self.SRC_DOWNSAMPLE     = 20     # downsample the sourcs model
+            self.DST_DOWNSAMPLE     = 20     # downsample the target model  
             
         elif testType == 41:
-            self.Print("Load reference models...")
+            self.Print("Load reference model...")
             dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
             las             = laspy.read(dataPath + '\\farm2M.laz')
-            #self.Print('Target model scale : %d' %las.header.scales) # dimensions
+            self.Print('Target model scale : %s' %str(las.header.scales)) # dimensions
             point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
-            self.dst_points = point_data/1000
-            self.Print("Load source models...")
+            self.dst_points = point_data/1
+            self.Print("Load search model...")
             las             = laspy.read(dataPath + '\\valve.laz') # valve pressure # farm2M
-            #self.Print('Search model scale : %d' %las.header.scales) # dimensions
+            self.Print('Search model scale : %s' %str(las.header.scales)) # dimensions
             point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
-            self.src_points = point_data/1000 + 1  # small shift to see the difference 
-            self.Print("Load models is done.")                        
+            self.src_points = point_data/10000 + 0  # small shift to see the difference 
+            self.Print("Load models is done.")      
+            # need to adjust size
+            self.SENSOR_NOISE       = 0.10      # sensor noise in mm
+            self.MAX_OBJECT_SIZE    = 500       # max object size to be macthed 
+            self.DIST_BIN_WIDTH     = 1             
+          
+        elif testType == 51: # selection from the small model
+                        
+            self.SENSOR_NOISE       = 1      # sensor noise in mm
+            self.MAX_OBJECT_SIZE    = 5000       # max object size to be macthed 
+            self.DIST_BIN_WIDTH     = 10
+            self.SRC_DOWNSAMPLE     = 40     # downsample the sourcs model
+            self.DST_DOWNSAMPLE     = 40     # downsample the target model            
+            
+            self.Print("Load reference model...")
+            dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
+            las             = laspy.read(dataPath + '\\valve.laz')
+            self.Print('Target model scale : %s' %str(las.header.scales)) # dimensions
+            point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
+            self.dst_points = point_data/10000
+            
+            self.Print("Select search model...")
+            point_data_subset = find_closest_points(self.dst_points, point_coord = self.dst_points[1000,:],  max_dist = self.MAX_OBJECT_SIZE/2)
+            if point_data_subset.shape[0] < 100:
+                raise ValueError("Can not selectr enougph points")
+                
+            self.src_points = point_data_subset/1 + 1  # small shift to see the difference
+             
+            self.Print("Load models is done.")      
+            # need to adjust size   
+            
+        elif testType == 52: # selection from the small model
+                        
+            self.SENSOR_NOISE       = 1      # sensor noise in mm
+            self.MAX_OBJECT_SIZE    = 5000       # max object size to be macthed 
+            self.DIST_BIN_WIDTH     = 10
+            self.SRC_DOWNSAMPLE     = 40     # downsample the sourcs model
+            self.DST_DOWNSAMPLE     = 40     # downsample the target model            
+            
+            self.Print("Load reference model...")
+            dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
+            las             = laspy.read(dataPath + '\\valve.laz')
+            self.Print('Target model scale : %s' %str(las.header.scales)) # dimensions
+            point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
+            self.dst_points = point_data/10000
+            
+            self.Print("Select search model...")
+            point_data_subset = self.dst_points[:1000,:]
+            if point_data_subset.shape[0] < 100:
+                raise ValueError("Can not selectr enougph points")
+                
+            self.src_points = point_data_subset/1 + 1  # small shift to see the difference
+             
+            self.Print("Load models is done.")  
+                        
+        elif testType == 61: # selection from the big model
+                        
+            self.SENSOR_NOISE       = 0.10      # sensor noise in mm
+            self.MAX_OBJECT_SIZE    = 1000       # max object size to be macthed 
+            self.DIST_BIN_WIDTH     = 10 
+            
+            self.Print("Load reference model...")
+            dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
+            las             = laspy.read(dataPath + '\\farm2M.laz')
+            self.Print('Target model scale : %s' %str(las.header.scales)) # dimensions
+            point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
+            self.dst_points = point_data/1
+            
+            self.Print("Select search model...")
+            point_data_subset = find_closest_points(point_data, point_coord = point_data[100000,:],  max_dist = self.MAX_OBJECT_SIZE/2)
+            if point_data_subset.shape[0] < 100:
+                raise ValueError("Can not selectr enougph points")
+                
+            self.src_points = point_data_subset/1 + 1  # small shift to see the difference
+             
+            self.Print("Load models is done.")      
+            # need to adjust size
+            
+        elif testType == 62: # selection from the big model
+                        
+            self.SENSOR_NOISE       = 10      # sensor noise in mm
+            self.MAX_OBJECT_SIZE    = 10000       # max object size to be macthed 
+            self.DIST_BIN_WIDTH     = 10 
+            self.SRC_DOWNSAMPLE     = 500     # downsample the sourcs model
+            self.DST_DOWNSAMPLE     = 500     # downsample the target model               
+            
+            self.Print("Load reference model...")
+            dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
+            las             = laspy.read(dataPath + '\\farm2M.laz')
+            self.Print('Target model scale : %s' %str(las.header.scales)) # dimensions
+            point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
+            self.dst_points = point_data/1
+            
+            self.Print("Select search model...")
+            #point_data_subset = self.dst_points[1750000:1800000,:]  # good
+            #point_data_subset = self.dst_points[1840000:1850000,:] # good
+            point_data_subset = self.dst_points[1860000:1870000,:] # good
+            if point_data_subset.shape[0] < 100:
+                raise ValueError("Can not selectr enougph points")
+                
+            self.src_points = point_data_subset/1 + 1  # small shift to see the difference
+             
+            self.Print("Load models is done.") 
+                             
         else:
             self.Print('Bad choice %d is selected' %testType, 'E')
             return ret    
@@ -320,19 +473,21 @@ class MatchPointClouds:
         points = points.astype(np.int32)
         return points
 
-    def PrepareDataset(self, points, min_dist_value = 0, max_dist_value = MAX_OBJECT_SIZE):
+    def PrepareDataset(self, points, min_dist_value = 0, max_dist_value = 1000):
         # compute distances only on the part
         dist_ij     = scipy_cdist(points,points)
         # dist_ij[dist_ij < min_dist_value] = 1e9
         # dkey_ij     = dist2key(dist_ij,10)
         # index_ij    = dkey_ij.argsort(axis = 1)
         # knn_num     = np.minimum(knn_num,len(points))
-        
+        self.Print('Statistics:  Point number: %5d' %(dist_ij.shape[0]))
         self.Print('Statistics: Min-Max range: %4.1f - %4.1f' %(min_dist_value, max_dist_value ))
         self.Print('Statistics:  Max distance: %4.1f' %(dist_ij.max()))
 
+        #if self.DIST_BIN_WIDTH < 1:
+        #    raise ValueError('self.DIST_BIN_WIDTH must be >= 1')
         
-        dist_ij       = dist2key(dist_ij, self.DIST_BIN_WIDTH)
+        dist_ij               = dist2key(dist_ij, self.DIST_BIN_WIDTH)
         index_i, index_j      = np.nonzero(np.logical_and(min_dist_value < dist_ij , dist_ij < max_dist_value))
     
         dist_dict = {}
@@ -352,11 +507,12 @@ class MatchPointClouds:
         points          = self.MakeCompact(points)
         
         # minimal distance between points
-        min_dist        = SENSOR_NOISE * 10   
+        min_dist        = self.SENSOR_NOISE * 10   
+        max_dist        = self.MAX_OBJECT_SIZE
         
         # compute different structures from distance
         t_start      = time.time()
-        dist_dict, pairs_dict   = self.PrepareDataset(points,  min_dist, MAX_OBJECT_SIZE)
+        dist_dict, pairs_dict   = self.PrepareDataset(points,  min_dist, max_dist)
         t_stop      = time.time()
         self.Print('Dist Hash time : %4.3f [sec]' %(t_stop - t_start))
         
@@ -415,7 +571,7 @@ class MatchPointClouds:
             # extract distances for the designated points
             snodes      = [1,2,3]
         else:
-            snodes      = indx
+            snodes      = list(indx)
             
         self.Print('Index : %s' %str(snodes))
             
@@ -427,7 +583,7 @@ class MatchPointClouds:
         cycle_list  = []
         count_cycle = 0
         for sjk in spairs:
-            
+            self.Print(sjk)
             dist_jk        = self.srcPairs[sjk]  # extract distance
             dpairs_jk      = get_match_pairs(self.dstDist, dist_jk)
             if dpairs_jk is None:
@@ -462,30 +618,94 @@ class MatchPointClouds:
         self.src_cycle         = spairs_ii   # cycle selected
         self.dst_cycle         = dpairs_ii   # cycles detected     
             
-        isDetected              = len(dpairs_ii) > 0
+        isDetected             = len(dpairs_ii) > 0
         
         return isDetected
         
+    def MatchCycleDict3(self, indx = []):
+        # match in several steps
+        #if self.dstAdjacency is None:
+        #    self.Preprocess()
+
+        if len(indx) < 3:
+            # extract distances for the designated points
+            snodes      = [1,2,3]
+        else:
+            snodes      = list(indx)
+            
+        self.Print('Index : %s' %str(snodes))
+            
+        sshift      = np.roll(snodes,-1) #snodes[1:] + snodes[:1]  # shift nodes by 1
+        spairs      = [(snodes[k],sshift[k]) for k in range(len(snodes))]
+
+        # move over from point to point and store all possible matches
+        t_start     = time.time()
+        cycle_list  = []
+        count_cycle = 0
+        for sjk in spairs:
+            self.Print(sjk)
+            dist_jk        = self.srcPairs[sjk]  # extract distance
+            dpairs_jk      = get_match_pairs(self.dstDist, dist_jk)
+            if dpairs_jk is None:
+                cycle_ij = None
+                break
+            # init ij - first point
+            if count_cycle == 0:
+                # use dictionary to trace cycles
+                cycle_ij = {djk:1 for djk in dpairs_jk}  # starting point
+            else:
+                cycle_ij = dict_intersect_cycle(cycle_ij, dpairs_jk)
+            # store pairs for traceback
+            #cycle_list.append(dpairs_ij)
+            count_cycle += 1 
+            print("set cycle_ij:\n",cycle_ij)
+        
+        # check
+        if cycle_ij is None:
+            self.Print('Failed to find cycles')
+            return False
+            
+        # extract closed cycles
+        #dpairs_ij = cycle_ij #cycle_list[-1]
+        dpairs_ii = {dii[:-1]:1 for dii in cycle_ij if dii[0]==dii[-1]}
+        
+        #spairs_ii = {(snodes[0],snodes[0]) : snodes}
+        spairs_ii = {(snodes[0],snodes[1],snodes[2]) : 1}
+        print("scycle dii:",spairs_ii)
+        print("dcycle dii:",dpairs_ii)
+        t_stop      = time.time()
+        self.Print('Match time : %4.3f [sec]' %(t_stop - t_start))
+            
+        self.src_cycle         = spairs_ii   # cycle selected
+        self.dst_cycle         = dpairs_ii   # cycles detected     
+            
+        isDetected             = len(dpairs_ii) > 0
+        
+        return isDetected
+            
     def MatchSourceToTarget(self, src_points = None, dst_points = None):
         # main processing and matching
         if src_points is None or dst_points is None:
             src_points, dst_points = self.src_points, self.dst_points
+            
+        # factor 1000 make min distance small and keeps all the points
+        self.Print('Target model...')
+        dst_points, dst_dist_dict, dst_pairs_dict  = self.PreprocessPointData(dst_points, self.DST_DOWNSAMPLE)     
         
         # preprocess all the dta
-        src_points, src_dist_dict, src_pairs_dict  = self.PreprocessPointData(src_points, 200)
-        
-        # factor 1000 make min distance small and keeps all the points
-        dst_points, dst_dist_dict, dst_pairs_dict  = self.PreprocessPointData(dst_points, 50)
+        self.Print('Match model...')
+        src_points, src_dist_dict, src_pairs_dict  = self.PreprocessPointData(src_points, self.SRC_DOWNSAMPLE)
     
         # need to do selection
         self.srcPairs   = src_pairs_dict
         self.dstDist    = dst_dist_dict     
          
         # select indexes
-        src_indx = self.SelectMatchPoints(src_points, selectType = 3)
+        src_indx        = self.SelectMatchPoints(src_points, selectType = 3)
 
         # match according to indexes
-        isOk            = self.MatchCycle3(src_indx) 
+        #isOk            = self.MatchCycle3(src_indx)         
+        isOk            = self.MatchCycleDict3(src_indx) 
 
         
         return True
@@ -501,15 +721,16 @@ class MatchPointClouds:
         
         return pcd
     
-    def ColorCyles(self, pcd, cycle_ii, clr = [0, 1, 0]):   
+    def ColorCycles(self, pcd, cycle_ii, clr = [0, 1, 0]):   
         # cycle_ii is a dictionary with cycle per point
         #self.Print('Colors point cycles and the rest are gray') 
-        #pcd.paint_uniform_color([0.6, 0.6, 0.6])
+        #
         if cycle_ii is None:
+            pcd.paint_uniform_color([0.6, 0.6, 0.6])
             return pcd
         
         for p in cycle_ii.keys():
-            idx = cycle_ii[p]
+            idx = p #cycle_ii[p]
             np.asarray(pcd.colors)[idx, :] = clr
         
         return pcd
@@ -533,8 +754,8 @@ class MatchPointClouds:
         dst_pcd = get_pcd_from_vertex(self.dst_points, clr = [0.1, 0.8, 0.1] )
        
         # color cycles
-        src_pcd = self.ColorCyles(src_pcd, self.src_cycle, [1,0,1])
-        dst_pcd = self.ColorCyles(dst_pcd, self.dst_cycle, [0,1,1])    
+        src_pcd = self.ColorCycles(src_pcd, self.src_cycle, [1,0,1])
+        dst_pcd = self.ColorCycles(dst_pcd, self.dst_cycle, [0,1,1])    
 
 
         #source_temp.paint_uniform_color([0.9, 0.1, 0])
@@ -548,7 +769,6 @@ class MatchPointClouds:
         #                               lookat=[1.9892, 2.0208, 1.8945],
         #                               up=[-0.2779, -0.9482, 0.1556])        
         return True
-
 
     def Finish(self):
         
@@ -605,7 +825,7 @@ class TestMatchPointClouds(unittest.TestCase):
     def test_MatchSourceTarget(self):
         # match cycle 
         d           = MatchPointClouds()
-        isOk        = d.SelectTestCase(41)
+        isOk        = d.SelectTestCase(62)
     
         isOk        = d.MatchSourceToTarget()
 

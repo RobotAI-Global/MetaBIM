@@ -438,7 +438,7 @@ class MatchPointClouds:
             self.Print("Select search model...")
             #point_data_subset = self.dst_points[1750000:1800000,:]  # good
             #point_data_subset = self.dst_points[1840000:1850000,:] # good
-            point_data_subset = self.dst_points[1860000:1870000,:] # good
+            point_data_subset = self.dst_points[1860010:1870000,:] # good
             if point_data_subset.shape[0] < 100:
                 raise ValueError("Can not selectr enougph points")
                 

@@ -12,11 +12,13 @@ Installation Packages:
     # 
     pip install open3d
     pip install laspy[lazrs,laszip]
+    pip install matplotlib
        
 
 -----------------------------
  Ver	Date	 Who	Descr
 -----------------------------
+0202   28.04.23  UD     New data for match
 0201   14.04.23  UD     simplifying the Matching3D
 0102   28.02.23  UD     adding laz file support
 0101   25.02.23  UD     Created
@@ -34,9 +36,9 @@ import time
 import copy
 from scipy.spatial.distance import cdist, pdist, squareform
 import unittest
+import matplotlib.pyplot as plt
 
-
-
+plt.ioff()  # interactive mode off
 
 #%% Help functions
 # ======================
@@ -146,7 +148,8 @@ def find_closest_points(point_data, point_coord = [0,0,0],  max_dist = 100):
 # ======================
 def dist2key(d, factor = 10):
     # creates key from distance
-    k = np.round(d*factor)/factor
+    #k = np.round(d*factor)/factor
+    k = np.round(d/factor)*factor
     return k
     
 def add_value(dict_obj, key, value):
@@ -166,8 +169,10 @@ def get_match_pairs(dist_hash, dist_points):
     #dist_points = np.linalg.norm(points[i] - points[j])
     dkey  = dist_points #dist2key(dist_points) #np.round(dist_points*10)/10
     pairs = dist_hash.get(dkey)
-    if len(pairs) > 1000:
-        print('Too many matches - consider to reduce bin size')
+    if pairs is not None:
+        if len(pairs) > 1000:
+            print('Too many matches - consider to reduce bin size. Limiting.')
+            pairs = pairs[:1000]
         
     return pairs
 
@@ -230,7 +235,7 @@ class MatchPointClouds:
                
         self.state              = False  # object is initialized
         self.cfg                = config
-        self.debugOn            = True
+        self.debugOn            = False
         self.figNum             = 1      # control names of the figures
         self.t_start            = time.time()
         
@@ -243,7 +248,7 @@ class MatchPointClouds:
         # param
         # DIST_BIN_WIDTH helps to assign multiple distances to the same bin. 
         # higher DIST_BIN_WIDTH more distances in the same bin
-        self.DIST_BIN_WIDTH   = 10     # how many right zeros in the distance number
+        self.DIST_BIN_WIDTH   = 1     # how many right zeros in the distance number
         
         self.src_points         = None   # model points Nx3 to be matched
         self.dst_points         = None   # target points Mx3 to be matched to  
@@ -262,11 +267,8 @@ class MatchPointClouds:
         
         # self.srcAdjacency       = None   # adjacency mtrx for source
         # self.dstAdjacency       = None   # adjacency mtrx for target 
-        
-        # self.srcC               = None   # center vector 
-        # self.srcE               = None   # extension vector 
-        # self.dstC               = None   # center vector 
-        # self.dstE               = None   # extension vector        
+        self.dbg_dist_value     = None    # jusy for debug
+   
                
         self.Print('3D-Manager is created')
         
@@ -304,6 +306,7 @@ class MatchPointClouds:
             self.src_points = point_data + 1  # small shift to see the difference
             
         elif testType == 12:
+            self.DIST_BIN_WIDTH   = 0.1
             self.Print("one point cloud is a part of the other .")
             point_data  = get_test_vertex(12)
             self.dst_points = point_data
@@ -312,10 +315,21 @@ class MatchPointClouds:
 
         elif testType == 13:
             self.Print("one point cloud is a part of the other.")
+            self.DIST_BIN_WIDTH   = 0.1  # working
             point_data  = get_test_vertex(13)
             self.dst_points = point_data
             point_data  = point_data[:37,:]
             self.src_points = point_data + 1  # small shift to see the difference  
+            
+        elif testType == 14:
+            self.Print("one point cloud is a part of the other - different bin width.")
+            self.DIST_BIN_WIDTH   = 0.05  # 1, 10 -is too many matches, 0.01 is good but slow
+            point_data  = get_test_vertex(13)
+            self.dst_points = point_data
+            point_data  = point_data[:37,:]
+            self.src_points = point_data + 5  # small shift to see the difference  
+            
+            self.debugOn = False            
                                                           
         elif testType == 31:
             self.Print("Load customer models.")
@@ -331,22 +345,66 @@ class MatchPointClouds:
             self.DST_DOWNSAMPLE     = 20     # downsample the target model  
             
         elif testType == 41:
+            
+            self.SENSOR_NOISE       = 10      # sensor noise in mm
+            self.MAX_OBJECT_SIZE    = 2000   # max object size to be macthed 
+            self.DIST_BIN_WIDTH     = 20 
+            self.SRC_DOWNSAMPLE     = 400     # downsample the sourcs model
+            self.DST_DOWNSAMPLE     = 400     # downsample the target model 
+            
             self.Print("Load reference model...")
             dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
             las             = laspy.read(dataPath + '\\farm2M.laz')
             self.Print('Target model scale : %s' %str(las.header.scales)) # dimensions
+            dst_scale       = np.max(las.header.scales)
             point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
             self.dst_points = point_data/1
-            self.Print("Load search model...")
-            las             = laspy.read(dataPath + '\\valve.laz') # valve pressure # farm2M
-            self.Print('Search model scale : %s' %str(las.header.scales)) # dimensions
+            self.Print('Model point numbers : %d' %(point_data.shape[0]))  
+            self.Print('Dimensions  : %s' %str(point_data.max(0) - point_data.min(0)))
+            
+            self.Print("Load Search model - old data...")
+            #dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-04-24'
+            las             = laspy.read(dataPath + '\\pump.laz') # valve pressure # farm2M
+            self.Print('Model scale : %s' %str(las.header.scales)) # dimensions
+            src_scale       = np.max(las.header.scales)
             point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
-            self.src_points = point_data/10000 + 0  # small shift to see the difference 
+            point_data      = point_data * src_scale /dst_scale + 0
+            self.src_points = point_data + 10  # small shift to see the difference 
+            self.Print('Model point numbers : %d' %(point_data.shape[0]))
+            self.Print('Dimensions  : %s' %str(point_data.max(0) - point_data.min(0)))
+                
+            
+        elif testType == 42:
+            
+            self.SENSOR_NOISE       = 1      # sensor noise in mm
+            self.MAX_OBJECT_SIZE    = 2000   # max object size to be macthed 
+            self.DIST_BIN_WIDTH     = 10 
+            self.SRC_DOWNSAMPLE     = 1     # downsample the sourcs model
+            self.DST_DOWNSAMPLE     = 400     # downsample the target model  
+                        
+            self.Print("Load Target model...")
+            dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
+            las             = laspy.read(dataPath + '\\farm2M.laz')
+            self.Print('Model scale : %s' %str(las.header.scales)) # dimensions
+            dst_scale       = np.max(las.header.scales)
+            point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
+            self.dst_points = point_data/1
+            self.Print('Model point numbers : %d' %(point_data.shape[0]))  
+            self.Print('Dimensions  : %s' %str(point_data.max(0) - point_data.min(0)))
+            
+            self.Print("Load Search model - new data...")
+            dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-04-24'
+            las             = laspy.read(dataPath + '\\pump.laz') # valve pressure # farm2M
+            self.Print('Model scale : %s' %str(las.header.scales)) # dimensions
+            src_scale       = np.max(las.header.scales)
+            point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
+            point_data      = point_data * src_scale /dst_scale + 0
+            self.src_points = point_data + 0  # small shift to see the difference 
+            self.Print('Model point numbers : %d' %(point_data.shape[0]))
+            self.Print('Dimensions  : %s' %str(point_data.max(0) - point_data.min(0)))
+            
             self.Print("Load models is done.")      
-            # need to adjust size
-            self.SENSOR_NOISE       = 0.10      # sensor noise in mm
-            self.MAX_OBJECT_SIZE    = 500       # max object size to be macthed 
-            self.DIST_BIN_WIDTH     = 1             
+                   
           
         elif testType == 51: # selection from the small model
                         
@@ -438,7 +496,7 @@ class MatchPointClouds:
             self.Print("Select search model...")
             #point_data_subset = self.dst_points[1750000:1800000,:]  # good
             #point_data_subset = self.dst_points[1840000:1850000,:] # good
-            point_data_subset = self.dst_points[1860010:1870000,:] # good
+            point_data_subset = self.dst_points[1861000:1870000,:] # good
             if point_data_subset.shape[0] < 100:
                 raise ValueError("Can not selectr enougph points")
                 
@@ -454,9 +512,13 @@ class MatchPointClouds:
         self.Print('Data set %d is selected' %testType, 'I')
         return True    
     
-    def Downsample(self, points, factor = 3000):
+    def Downsample(self, points, factor = 300):
         # reduce num of points
         #voxel_down_pcd = pcd.voxel_down_sample(voxel_size=100.5)
+        point_num   = points.shape[0]
+        
+        factor      = np.maximum(factor, int(point_num/10000))
+        
         sample_rate = factor #int(len(points)/factor)
         if sample_rate > 1:
             down_points = points[::sample_rate,:]
@@ -487,7 +549,11 @@ class MatchPointClouds:
         #if self.DIST_BIN_WIDTH < 1:
         #    raise ValueError('self.DIST_BIN_WIDTH must be >= 1')
         
+        #
         dist_ij               = dist2key(dist_ij, self.DIST_BIN_WIDTH)
+        if self.debugOn:
+            self.dbg_dist_value   = dist_ij
+        
         index_i, index_j      = np.nonzero(np.logical_and(min_dist_value < dist_ij , dist_ij < max_dist_value))
     
         dist_dict = {}
@@ -634,9 +700,16 @@ class MatchPointClouds:
             snodes      = list(indx)
             
         self.Print('Index : %s' %str(snodes))
-            
+        
+        
         sshift      = np.roll(snodes,-1) #snodes[1:] + snodes[:1]  # shift nodes by 1
         spairs      = [(snodes[k],sshift[k]) for k in range(len(snodes))]
+        
+        # check the index are different points
+        isGood      = np.all([skj[0] != skj[1] for skj in spairs])
+        if not isGood:
+            self.Print('Provided indexes of the match mode are not good %s' %str(snodes))
+            return False        
 
         # move over from point to point and store all possible matches
         t_start     = time.time()
@@ -658,7 +731,8 @@ class MatchPointClouds:
             # store pairs for traceback
             #cycle_list.append(dpairs_ij)
             count_cycle += 1 
-            print("set cycle_ij:\n",cycle_ij)
+            #print("set cycle_ij:\n",cycle_ij)
+            self.Print("set cycle_ij length %d:" %len(cycle_ij))
         
         # check
         if cycle_ij is None:
@@ -680,7 +754,8 @@ class MatchPointClouds:
         self.dst_cycle         = dpairs_ii   # cycles detected     
             
         isDetected             = len(dpairs_ii) > 0
-        
+        if not isDetected :
+            self.Print('No detection. Consider to increase DIST_BIN_WIDTH or reduce DOWNSAMPLING','W')
         return isDetected
             
     def MatchSourceToTarget(self, src_points = None, dst_points = None):
@@ -691,10 +766,14 @@ class MatchPointClouds:
         # factor 1000 make min distance small and keeps all the points
         self.Print('Target model...')
         dst_points, dst_dist_dict, dst_pairs_dict  = self.PreprocessPointData(dst_points, self.DST_DOWNSAMPLE)     
-        
+        self.ShowDistanceHistogram(self.dbg_dist_value,'Dst Distances')
+        self.ShowDictionaryHistogram(dst_dist_dict,'Dst Dictionary')
+         
         # preprocess all the dta
         self.Print('Match model...')
         src_points, src_dist_dict, src_pairs_dict  = self.PreprocessPointData(src_points, self.SRC_DOWNSAMPLE)
+        self.ShowDistanceHistogram(self.dbg_dist_value,'Src Distances')
+        self.ShowDictionaryHistogram(src_dist_dict,'Src Dictionary')
     
         # need to do selection
         self.srcPairs   = src_pairs_dict
@@ -709,6 +788,109 @@ class MatchPointClouds:
 
         
         return True
+        
+    def ComputeTransformation(self, source, target, picked_id_source, picked_id_target):
+        # point to point transformation using indexes
+            
+        # pick points from two point clouds and builds correspondences
+        #picked_id_source = pick_points(source)
+        #picked_id_target = pick_points(target)
+        assert (len(picked_id_source) >= 3 and len(picked_id_target) >= 3)
+        assert (len(picked_id_source) == len(picked_id_target))
+        corr        = np.zeros((len(picked_id_source), 2))
+        corr[:, 0]  = picked_id_source
+        corr[:, 1]  = picked_id_target
+        
+
+
+        # estimate rough transformation using correspondences
+        self.Print("Compute a rough transform using the correspondences ")
+        p2p = o3d.pipelines.registration.TransformationEstimationPointToPoint()
+        trans_init = p2p.compute_transformation(source, target, o3d.utility.Vector2iVector(corr))  
+        
+        # point-to-point ICP for refinement
+        self.Print("Perform point-to-point ICP refinement")
+        threshold = 0.03  # 3cm distance threshold
+        reg_p2p = o3d.pipelines.registration.registration_icp(
+        source, target, threshold, trans_init,
+        o3d.pipelines.registration.TransformationEstimationPointToPoint())        
+        
+        #source_trasformed = self.draw_registration_result(source, target, reg_p2p.transformation) 
+        
+        source_temp = copy.deepcopy(source)
+        #target_temp = copy.deepcopy(target)
+        #source_temp.paint_uniform_color([1, 0.706, 0])
+        #target_temp.paint_uniform_color([0, 0.651, 0.929])
+        source_temp.transform(reg_p2p.transformation)
+        
+        #o3d.visualization.draw_geometries([source_temp, target_temp])
+        source_trasformed = source_temp
+        
+        # debug
+        src_points = np.asarray(source.points)[picked_id_source,:]
+        dst_points = np.asarray(target.points)[picked_id_target,:]
+        print(src_points, dst_points )
+        print(reg_p2p.transformation)
+        return source_trasformed 
+    
+    def ShowMatchedData3D(self, wname = 'Source'):
+        # show 3D data with multiple matcing sources
+        ret = False
+        if self.src_points is None or self.dst_points is None:
+            self.Print('Point cloud data is not specified','W')
+            return
+        
+        src_indx = [k for k, v in self.src_cycle.items()]
+        dst_indx = [k for k, v in self.dst_cycle.items()]
+        dst_match_num = len(dst_indx)
+        if dst_match_num < 1:
+            self.Print('No matcing points are found','W')
+            return 
+        
+        if dst_match_num > 3:
+            dst_match_num = 3  
+            self.Print('Too many matches are found. Showing first 3','I')    
+            
+        clrs    = [[0.8, 0.1, 0.1],[0.1, 0.1, 0.8], [0.8, 0.1, 0.8]]    
+        
+        # convert
+        dst_pcd = get_pcd_from_vertex(self.dst_points, clr = [0.1, 0.8, 0.1] )
+        src_pcd = get_pcd_from_vertex(self.src_points, clr = [0.8, 0.1, 0.1] )
+        
+        # start matching
+        pcd_list = [dst_pcd]
+        
+        for m in range(dst_match_num):
+            s_indx = src_indx[0]
+            d_indx = dst_indx[m]
+            srd_pcd_trasformed = self.ComputeTransformation(src_pcd, dst_pcd, s_indx, d_indx)
+            srd_pcd_trasformed.paint_uniform_color(clrs[m])
+            pcd_list.append(srd_pcd_trasformed)
+            
+
+        #source_temp.paint_uniform_color([0.9, 0.1, 0])
+        #target_temp.paint_uniform_color([0, 0.9, 0.1])
+        #source_temp.transform(transformation)
+        o3d.visualization.draw(pcd_list)
+        #o3d.visualization.draw_geometries([source_temp, target_temp], window_name = wname)
+        # o3d.visualization.draw_geometries([source_temp, target_temp],
+        #                               zoom=0.4559,
+        #                               front=[0.6452, -0.3036, -0.7011],
+        #                               lookat=[1.9892, 2.0208, 1.8945],
+        #                               up=[-0.2779, -0.9482, 0.1556])      
+        
+        # aabb = src_pcd.get_axis_aligned_bounding_box()
+        # aabb.color = (1, 0, 0)
+        # obb = chair.get_oriented_bounding_box()
+        # obb.color = (0, 1, 0)
+        # o3d.visualization.draw_geometries([src_pcd, aabb, obb],
+        #                                 zoom=0.7,
+        #                                 front=[0.5439, -0.2333, -0.8060],
+        #                                 lookat=[2.4615, 2.1331, 1.338],
+        #                                 up=[-0.1781, -0.9708, 0.1608])
+        
+
+        return True    
         
     def ColorSpecificPoints(self, pcd, pairs_ij, clr = [0, 1, 0]):   
         self.Print('Colors specific points and the rest are gray') 
@@ -750,12 +932,14 @@ class MatchPointClouds:
             return
         
         # convert
-        src_pcd = get_pcd_from_vertex(self.src_points, clr = [0.8, 0.1, 0.1] )
         dst_pcd = get_pcd_from_vertex(self.dst_points, clr = [0.1, 0.8, 0.1] )
+        src_pcd = get_pcd_from_vertex(self.src_points, clr = [0.8, 0.1, 0.1] )
+        
        
         # color cycles
+        dst_pcd = self.ColorCycles(dst_pcd, self.dst_cycle, [0,1,1])
         src_pcd = self.ColorCycles(src_pcd, self.src_cycle, [1,0,1])
-        dst_pcd = self.ColorCycles(dst_pcd, self.dst_cycle, [0,1,1])    
+            
 
 
         #source_temp.paint_uniform_color([0.9, 0.1, 0])
@@ -767,11 +951,75 @@ class MatchPointClouds:
         #                               zoom=0.4559,
         #                               front=[0.6452, -0.3036, -0.7011],
         #                               lookat=[1.9892, 2.0208, 1.8945],
-        #                               up=[-0.2779, -0.9482, 0.1556])        
+        #                               up=[-0.2779, -0.9482, 0.1556])      
+        
+        # aabb = src_pcd.get_axis_aligned_bounding_box()
+        # aabb.color = (1, 0, 0)
+        # obb = chair.get_oriented_bounding_box()
+        # obb.color = (0, 1, 0)
+        # o3d.visualization.draw_geometries([src_pcd, aabb, obb],
+        #                                 zoom=0.7,
+        #                                 front=[0.5439, -0.2333, -0.8060],
+        #                                 lookat=[2.4615, 2.1331, 1.338],
+        #                                 up=[-0.1781, -0.9708, 0.1608])
+        
+
         return True
+
+    def ShowDistanceHistogram(self, distance_values = None, title_text = ''):
+        # displays distance histogram
+        if not self.debugOn:
+            return
+        
+        if distance_values is None:
+            if self.dbg_dist_value is None:
+                return
+            else:
+                distance_values = self.dbg_dist_value
+                self.Print('Debug mode is on')
+        
+        
+        #low_bound = np.percentile(distance_values, 2)
+        #top_bound = np.percentile(distance_values, 98)
+        low_bound = np.min(distance_values)
+        top_bound = np.max(distance_values)
+        bin_number = int((top_bound - low_bound)/self.DIST_BIN_WIDTH)
+        his_val, bin_edges = np.histogram(distance_values, bins=bin_number, range=(low_bound,top_bound), density=False)
+        hist_loc = (bin_edges[:-1] + bin_edges[1:]) / 2
+        width    = 0.8 * (bin_edges[1] - bin_edges[0])
+        
+        plt.figure()
+        plt.bar(hist_loc,his_val, align='center', width=width)
+        plt.title(title_text + ' bins : ' + str(bin_number))
+        plt.show(block=False)
+        
+    def ShowDictionaryHistogram(self, dist_dict, title_text = ''):
+        # displays distance histogram stored in hash
+        if not self.debugOn:
+            return
+        
+        if not isinstance(dist_dict, dict):
+            return
+        self.Print('Debug mode is on')
+        
+        distance_values = dist_dict.keys()
+        distance_counts = [len(val) for val in dist_dict.values()]
+        
+        his_val  = distance_counts
+        hist_loc = distance_values
+        bin_number = len(distance_counts)
+        width    = 0.8 * self.DIST_BIN_WIDTH
+        
+        plt.figure()
+        plt.bar(hist_loc, his_val, align='center', width=width)
+        plt.title(title_text + ' bins : ' + str(bin_number))
+        plt.show(block=False)        
 
     def Finish(self):
         
+        if self.debugOn:
+            plt.show()
+            
         #cv.destroyAllWindows() 
         self.Print('3D-Manager is closed')
         
@@ -821,15 +1069,34 @@ class TestMatchPointClouds(unittest.TestCase):
         transform   = np.array([[1,0,0,1],[0,1,0,1],[0,0,1,1],[0,0,0,1]])
         d.ShowData3D(d.srcObj3d,srcDown, transform)
         self.assertTrue(isOk)  
-                                      
+        
+    def test_Histogram(self):
+        # test distance histograms
+        d           = MatchPointClouds()
+        isOk        = d.SelectTestCase(13)  # 62-ok 
+        
+        d.Print('Target model...')
+        dst_points, dst_dist_dict, dst_pairs_dict  = d.PreprocessPointData(d.dst_points, d.DST_DOWNSAMPLE)     
+        d.ShowDistanceHistogram(d.dbg_dist_value,'Dst Distances')
+        d.ShowDictionaryHistogram(dst_dist_dict,'Dst Dictionary')
+        
+        # preprocess all the dta
+        d.Print('Match model...')
+        src_points, src_dist_dict, src_pairs_dict  = d.PreprocessPointData(d.src_points, d.SRC_DOWNSAMPLE)  
+        d.ShowDistanceHistogram(d.dbg_dist_value, 'Src Distances')
+        d.ShowDictionaryHistogram(src_dist_dict,'Src Dictionary')
+                   
+        plt.show()
+                   
     def test_MatchSourceTarget(self):
         # match cycle 
         d           = MatchPointClouds()
-        isOk        = d.SelectTestCase(62)
+        isOk        = d.SelectTestCase(41)  # 62-ok, 41-ok, 12-ok
     
         isOk        = d.MatchSourceToTarget()
 
-        d.ShowData3D()
+        #d.ShowData3D()
+        d.ShowMatchedData3D()
         d.Finish()
         self.assertTrue(isOk) 
         
@@ -852,6 +1119,6 @@ if __name__ == '__main__':
 #    singletest.addTest(TestMatchPointClouds("test_ShowData"))  
 #    singletest.addTest(TestMatching3D("test_Distance"))
     singletest.addTest(TestMatchPointClouds("test_MatchSourceTarget"))
-
+#    singletest.addTest(TestMatchPointClouds("test_Histogram"))
     
     unittest.TextTestRunner().run(singletest)

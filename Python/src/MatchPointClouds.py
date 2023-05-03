@@ -348,7 +348,7 @@ class MatchPointClouds:
             
             self.SENSOR_NOISE       = 10      # sensor noise in mm
             self.MAX_OBJECT_SIZE    = 2000   # max object size to be macthed 
-            self.DIST_BIN_WIDTH     = 20 
+            self.DIST_BIN_WIDTH     = 10 
             self.SRC_DOWNSAMPLE     = 400     # downsample the sourcs model
             self.DST_DOWNSAMPLE     = 400     # downsample the target model 
             
@@ -617,6 +617,12 @@ class MatchPointClouds:
                 self.Print('Failed to find a cycle','W')        
                   
         elif selectType == 11:
+             # min max elements of the array - most distant points
+            indx[0] = np.argmax(points[:,0], 0)
+            indx[1] = np.argmin(points[:,0], 0)
+            indx[2] = np.argmax(points[:,1], 0)
+            
+        elif selectType == 21:
             # find the closest points for selection
             min_dist   = (d.srcE.max()/100)**2
             max_dist   = (d.srcE.max()/1)**2
@@ -780,7 +786,7 @@ class MatchPointClouds:
         self.dstDist    = dst_dist_dict     
          
         # select indexes
-        src_indx        = self.SelectMatchPoints(src_points, selectType = 3)
+        src_indx        = self.SelectMatchPoints(src_points, selectType = 11)
 
         # match according to indexes
         #isOk            = self.MatchCycle3(src_indx)         

@@ -103,12 +103,12 @@ def get_pcd_from_vertex(point_data, clr = [0.3, 0.3, 0.3] ):
     #o3d.visualization.draw([pcd])
     return pcd
 
-def apply_noise(pcd, mu = 0, sigma = 1):
-    noisy_pcd = copy.deepcopy(pcd)
-    points = np.asarray(noisy_pcd.points)
+def apply_noise(points, mu = 0, sigma = 1):
+    #noisy_pcd = copy.deepcopy(pcd)
+    #points = np.asarray(noisy_pcd.points)
     points += np.random.normal(mu, sigma, size=points.shape)
-    noisy_pcd.points = o3d.utility.Vector3dVector(points)
-    return noisy_pcd
+    #noisy_pcd.points = o3d.utility.Vector3dVector(points)
+    return points
 
 def find_closest_points(point_data, point_coord = [0,0,0],  max_dist = 100):
     # find closest points
@@ -329,7 +329,17 @@ class MatchPointClouds:
             point_data  = point_data[:37,:]
             self.src_points = point_data + 5  # small shift to see the difference  
             
-            self.debugOn = False            
+            self.debugOn = False        
+            
+        elif testType == 15:
+            self.Print("one point cloud is a part of the other - noise.")
+            self.DIST_BIN_WIDTH   = 0.05  # 1, 10 -is too many matches, 0.01 is good but slow
+            point_data          = get_test_vertex(13)
+            self.dst_points     = point_data
+            point_data          = point_data[:37,:]
+            self.src_points     = apply_noise(point_data,5,0.01)  # small shift to see the difference  
+            
+            self.debugOn = False                     
                                                           
         elif testType == 31:
             self.Print("Load customer models.")
@@ -480,7 +490,7 @@ class MatchPointClouds:
             
         elif testType == 62: # selection from the big model
                         
-            self.SENSOR_NOISE       = 10      # sensor noise in mm
+            self.SENSOR_NOISE       = 100      # sensor noise in mm
             self.MAX_OBJECT_SIZE    = 10000       # max object size to be macthed 
             self.DIST_BIN_WIDTH     = 10 
             self.SRC_DOWNSAMPLE     = 500     # downsample the sourcs model
@@ -496,7 +506,7 @@ class MatchPointClouds:
             self.Print("Select search model...")
             #point_data_subset = self.dst_points[1750000:1800000,:]  # good
             #point_data_subset = self.dst_points[1840000:1850000,:] # good
-            point_data_subset = self.dst_points[1861000:1870000,:] # good
+            point_data_subset = self.dst_points[1800000:1870000,:] # good
             if point_data_subset.shape[0] < 100:
                 raise ValueError("Can not selectr enougph points")
                 
@@ -786,7 +796,7 @@ class MatchPointClouds:
         self.dstDist    = dst_dist_dict     
          
         # select indexes
-        src_indx        = self.SelectMatchPoints(src_points, selectType = 11)
+        src_indx        = self.SelectMatchPoints(src_points, selectType = 3)
 
         # match according to indexes
         #isOk            = self.MatchCycle3(src_indx)         
@@ -807,12 +817,13 @@ class MatchPointClouds:
         corr[:, 0]  = picked_id_source
         corr[:, 1]  = picked_id_target
         
-
+        #print(corr)
 
         # estimate rough transformation using correspondences
         self.Print("Compute a rough transform using the correspondences ")
         p2p = o3d.pipelines.registration.TransformationEstimationPointToPoint()
         trans_init = p2p.compute_transformation(source, target, o3d.utility.Vector2iVector(corr))  
+        print(trans_init)
         
         # point-to-point ICP for refinement
         self.Print("Perform point-to-point ICP refinement")
@@ -827,7 +838,9 @@ class MatchPointClouds:
         #target_temp = copy.deepcopy(target)
         #source_temp.paint_uniform_color([1, 0.706, 0])
         #target_temp.paint_uniform_color([0, 0.651, 0.929])
-        source_temp.transform(reg_p2p.transformation)
+        
+        #source_temp.transform(reg_p2p.transformation)
+        print(reg_p2p.transformation)
         
         #o3d.visualization.draw_geometries([source_temp, target_temp])
         source_trasformed = source_temp
@@ -835,8 +848,8 @@ class MatchPointClouds:
         # debug
         src_points = np.asarray(source.points)[picked_id_source,:]
         dst_points = np.asarray(target.points)[picked_id_target,:]
-        print(src_points, dst_points )
-        print(reg_p2p.transformation)
+        #print(src_points, dst_points )
+        #print(reg_p2p.transformation)
         return source_trasformed 
     
     def ShowMatchedData3D(self, wname = 'Source'):
@@ -1097,7 +1110,7 @@ class TestMatchPointClouds(unittest.TestCase):
     def test_MatchSourceTarget(self):
         # match cycle 
         d           = MatchPointClouds()
-        isOk        = d.SelectTestCase(41)  # 62-ok, 41-ok, 12-ok
+        isOk        = d.SelectTestCase(15)  # 62-ok, 41-ok, 12-ok, 14-ok
     
         isOk        = d.MatchSourceToTarget()
 

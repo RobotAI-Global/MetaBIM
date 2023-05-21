@@ -333,11 +333,11 @@ class MatchPointClouds:
             
         elif testType == 15:
             self.Print("one point cloud is a part of the other - noise.")
-            self.DIST_BIN_WIDTH   = 0.05  # 1, 10 -is too many matches, 0.01 is good but slow
-            point_data          = get_test_vertex(13)
+            self.DIST_BIN_WIDTH = 0.1  # 1, 10 -is too many matches, 0.01 is good but slow
+            point_data          = get_test_vertex(12)
             self.dst_points     = point_data
-            point_data          = point_data[:37,:]
-            self.src_points     = apply_noise(point_data,5,0.01)  # small shift to see the difference  
+            point_data          = point_data[:51,:]
+            self.src_points     = apply_noise(point_data,5,9)  # small shift to see the difference  
             
             self.debugOn = False                     
                                                           
@@ -351,8 +351,9 @@ class MatchPointClouds:
             point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
             self.src_points = point_data/1000 + 1  # small shift to see the difference 
                         
-            self.SRC_DOWNSAMPLE     = 20     # downsample the sourcs model
-            self.DST_DOWNSAMPLE     = 20     # downsample the target model  
+            self.SRC_DOWNSAMPLE     = 50     # downsample the sourcs model
+            self.DST_DOWNSAMPLE     = 50     # downsample the target model  
+            self.DIST_BIN_WIDTH     = 1 
             
         elif testType == 41:
             
@@ -818,12 +819,13 @@ class MatchPointClouds:
         corr[:, 1]  = picked_id_target
         
         #print(corr)
+        print(np.array(source.points)[picked_id_source,:], np.array(target.points)[picked_id_target,:])
 
         # estimate rough transformation using correspondences
         self.Print("Compute a rough transform using the correspondences ")
         p2p = o3d.pipelines.registration.TransformationEstimationPointToPoint()
         trans_init = p2p.compute_transformation(source, target, o3d.utility.Vector2iVector(corr))  
-        print(trans_init)
+        #print(trans_init)
         
         # point-to-point ICP for refinement
         self.Print("Perform point-to-point ICP refinement")
@@ -1110,7 +1112,7 @@ class TestMatchPointClouds(unittest.TestCase):
     def test_MatchSourceTarget(self):
         # match cycle 
         d           = MatchPointClouds()
-        isOk        = d.SelectTestCase(15)  # 62-ok, 41-ok, 12-ok, 14-ok
+        isOk        = d.SelectTestCase(31)  # 62-ok, 41-ok, 11,12-ok, 14-ok, 15-ok,
     
         isOk        = d.MatchSourceToTarget()
 

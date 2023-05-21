@@ -391,7 +391,7 @@ class MatchPointClouds:
             self.MAX_OBJECT_SIZE    = 2000   # max object size to be macthed 
             self.DIST_BIN_WIDTH     = 10 
             self.SRC_DOWNSAMPLE     = 1     # downsample the sourcs model
-            self.DST_DOWNSAMPLE     = 400     # downsample the target model  
+            self.DST_DOWNSAMPLE     = 300     # downsample the target model  
                         
             self.Print("Load Target model...")
             dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
@@ -399,7 +399,7 @@ class MatchPointClouds:
             self.Print('Model scale : %s' %str(las.header.scales)) # dimensions
             dst_scale       = np.max(las.header.scales)
             point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
-            self.dst_points = point_data/1
+            self.dst_points = point_data/1+3
             self.Print('Model point numbers : %d' %(point_data.shape[0]))  
             self.Print('Dimensions  : %s' %str(point_data.max(0) - point_data.min(0)))
             
@@ -420,10 +420,10 @@ class MatchPointClouds:
         elif testType == 51: # selection from the small model
                         
             self.SENSOR_NOISE       = 1      # sensor noise in mm
-            self.MAX_OBJECT_SIZE    = 5000       # max object size to be macthed 
-            self.DIST_BIN_WIDTH     = 10
-            self.SRC_DOWNSAMPLE     = 40     # downsample the sourcs model
-            self.DST_DOWNSAMPLE     = 40     # downsample the target model            
+            self.MAX_OBJECT_SIZE    = 500       # max object size to be macthed 
+            self.DIST_BIN_WIDTH     = 1
+            self.SRC_DOWNSAMPLE     = 50     # downsample the sourcs model
+            self.DST_DOWNSAMPLE     = 50     # downsample the target model            
             
             self.Print("Load reference model...")
             dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
@@ -445,7 +445,7 @@ class MatchPointClouds:
         elif testType == 52: # selection from the small model
                         
             self.SENSOR_NOISE       = 1      # sensor noise in mm
-            self.MAX_OBJECT_SIZE    = 5000       # max object size to be macthed 
+            self.MAX_OBJECT_SIZE    = 500       # max object size to be macthed 
             self.DIST_BIN_WIDTH     = 10
             self.SRC_DOWNSAMPLE     = 40     # downsample the sourcs model
             self.DST_DOWNSAMPLE     = 40     # downsample the target model            
@@ -468,9 +468,11 @@ class MatchPointClouds:
                         
         elif testType == 61: # selection from the big model
                         
-            self.SENSOR_NOISE       = 0.10      # sensor noise in mm
-            self.MAX_OBJECT_SIZE    = 1000       # max object size to be macthed 
+            self.SENSOR_NOISE       = 10      # sensor noise in mm
+            self.MAX_OBJECT_SIZE    = 5000       # max object size to be macthed 
             self.DIST_BIN_WIDTH     = 10 
+            self.SRC_DOWNSAMPLE     = 200     # downsample the sourcs model
+            self.DST_DOWNSAMPLE     = 200     # downsample the target model            
             
             self.Print("Load reference model...")
             dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
@@ -480,11 +482,11 @@ class MatchPointClouds:
             self.dst_points = point_data/1
             
             self.Print("Select search model...")
-            point_data_subset = find_closest_points(point_data, point_coord = point_data[100000,:],  max_dist = self.MAX_OBJECT_SIZE/2)
+            point_data_subset = find_closest_points(point_data, point_coord = point_data[400000,:],  max_dist = self.MAX_OBJECT_SIZE/2)
             if point_data_subset.shape[0] < 100:
                 raise ValueError("Can not selectr enougph points")
                 
-            self.src_points = point_data_subset/1 + 1  # small shift to see the difference
+            self.src_points = point_data_subset/1 + 5  # small shift to see the difference
              
             self.Print("Load models is done.")      
             # need to adjust size
@@ -492,8 +494,8 @@ class MatchPointClouds:
         elif testType == 62: # selection from the big model
                         
             self.SENSOR_NOISE       = 100      # sensor noise in mm
-            self.MAX_OBJECT_SIZE    = 10000       # max object size to be macthed 
-            self.DIST_BIN_WIDTH     = 10 
+            self.MAX_OBJECT_SIZE    = 30000       # max object size to be macthed 
+            self.DIST_BIN_WIDTH     = 100 
             self.SRC_DOWNSAMPLE     = 500     # downsample the sourcs model
             self.DST_DOWNSAMPLE     = 500     # downsample the target model               
             
@@ -511,7 +513,7 @@ class MatchPointClouds:
             if point_data_subset.shape[0] < 100:
                 raise ValueError("Can not selectr enougph points")
                 
-            self.src_points = point_data_subset/1 + 1  # small shift to see the difference
+            self.src_points = point_data_subset/1 + 5  # small shift to see the difference
              
             self.Print("Load models is done.") 
                              
@@ -1112,7 +1114,7 @@ class TestMatchPointClouds(unittest.TestCase):
     def test_MatchSourceTarget(self):
         # match cycle 
         d           = MatchPointClouds()
-        isOk        = d.SelectTestCase(31)  # 62-ok, 41-ok, 11,12-ok, 14-ok, 15-ok,
+        isOk        = d.SelectTestCase(61)  # 62-ok, 41-ok, 11,12-ok, 14-ok, 15-ok,31-ok, 42-ok, 51,52-ok
     
         isOk        = d.MatchSourceToTarget()
 

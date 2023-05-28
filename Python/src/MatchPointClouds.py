@@ -145,6 +145,18 @@ def find_closest_points(point_data, point_coord = [0,0,0],  max_dist = 100):
     point_data_indx = point_data[idx_dist_max, :]
     return point_data_indx
 
+def find_closest_points_in_cube(point_data, point_coord = [0,0,0],  max_dist = 100):
+    # find closest points by search in cube
+    print("Find neighbors of %s point with cube distance less than %d"  %(str(point_coord),max_dist ))
+    
+    p_bool   = np.ones((point_data.shape[0],1), dtype=bool)
+    for k in range(3):
+        x_bool   = np.logical_and((point_coord[k]-max_dist < point_data[:,k]) , (point_data[:,k] < point_coord[k]+max_dist))
+        p_bool   = np.logical_and(p_bool , x_bool.reshape(p_bool.shape))
+
+    point_data_indx = point_data[p_bool.ravel(),:]
+    return point_data_indx
+
 # ======================
 def dist2key(d, factor = 10):
     # creates key from distance
@@ -227,6 +239,12 @@ def scipy_cdist(X,Y):
     # c = squareform(pdist(a,metric='euclidean'))
     return cdist(X,Y,metric='euclidean')
 
+def assignment_step_v5(data, centroids):
+    # nice speed up using einstein summation : https://nicholasvadivelu.com/2021/05/10/fast-k-means/
+    diff = data[:, None] - centroids[None]  # (n, k, d)
+    distances = np.einsum('nkd,nkd->nk', diff, diff)  # (n, k)
+    labels = np.argmin(distances, axis=1)  # (n,)
+    return labels
 
 #%% Deals with multuple templates
 class MatchPointClouds:
@@ -249,6 +267,9 @@ class MatchPointClouds:
         # DIST_BIN_WIDTH helps to assign multiple distances to the same bin. 
         # higher DIST_BIN_WIDTH more distances in the same bin
         self.DIST_BIN_WIDTH   = 1     # how many right zeros in the distance number
+        
+        # how point selection is done
+        self.POINT_SELECT_TYPE  = 11   # 3-random, 11-max and min
         
         self.src_points         = None   # model points Nx3 to be matched
         self.dst_points         = None   # target points Mx3 to be matched to  
@@ -482,7 +503,7 @@ class MatchPointClouds:
             self.dst_points = point_data/1
             
             self.Print("Select search model...")
-            point_data_subset = find_closest_points(point_data, point_coord = point_data[400000,:],  max_dist = self.MAX_OBJECT_SIZE/2)
+            point_data_subset = find_closest_points_in_cube(point_data, point_coord = point_data[700000,:],  max_dist = self.MAX_OBJECT_SIZE/2)
             if point_data_subset.shape[0] < 100:
                 raise ValueError("Can not selectr enougph points")
                 
@@ -516,6 +537,57 @@ class MatchPointClouds:
             self.src_points = point_data_subset/1 + 5  # small shift to see the difference
              
             self.Print("Load models is done.") 
+            
+        elif testType == 71: # selection from the big model and then smaller model
+                        
+            self.SENSOR_NOISE       = 10      # sensor noise in mm
+            self.MAX_OBJECT_SIZE    = 1000       # max object size to be macthed 
+            self.DIST_BIN_WIDTH     = 1
+            self.SRC_DOWNSAMPLE     = 1     # downsample the sourcs model
+            self.DST_DOWNSAMPLE     = 1     # downsample the target model            
+            
+            self.Print("Load reference model...")
+            dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
+            las             = laspy.read(dataPath + '\\farm2M.laz')
+            self.Print('Target model scale : %s' %str(las.header.scales)) # dimensions
+            point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
+            point_data      = find_closest_points_in_cube(point_data, point_coord = point_data[1600000,:],  max_dist = self.MAX_OBJECT_SIZE/2)
+            self.dst_points = point_data/1
+            
+            self.Print("Select search model...")
+            point_data_subset = find_closest_points_in_cube(point_data, point_coord = point_data[100,:],  max_dist = self.MAX_OBJECT_SIZE/4)
+            if point_data_subset.shape[0] < 100:
+                raise ValueError("Can not selectr enougph points")
+                
+            self.src_points = point_data_subset/1 + 5  # small shift to see the difference
+             
+            self.Print("Load models is done.")  
+            
+        elif testType == 72: # selection from the big model and then smaller model
+                        
+            self.SENSOR_NOISE       = 10      # sensor noise in mm
+            self.MAX_OBJECT_SIZE    = 1000       # max object size to be macthed 
+            self.DIST_BIN_WIDTH     = 1
+            self.SRC_DOWNSAMPLE     = 1     # downsample the sourcs model
+            self.DST_DOWNSAMPLE     = 1     # downsample the target model       
+            self.POINT_SELECT_TYPE  = 3     
+            
+            self.Print("Load reference model...")
+            dataPath        = r'C:\RobotAI\Customers\MetaBIM\Code\MetaBIM\Data\2023-02-10'
+            las             = laspy.read(dataPath + '\\farm2M.laz')
+            self.Print('Target model scale : %s' %str(las.header.scales)) # dimensions
+            point_data      = np.stack([las.X, las.Y, las.Z], axis=0).transpose((1, 0))
+            point_data      = find_closest_points_in_cube(point_data, point_coord = point_data[1600000,:],  max_dist = self.MAX_OBJECT_SIZE/2)
+            self.dst_points = point_data/1
+            
+            self.Print("Select search model...")
+            point_data_subset = find_closest_points_in_cube(point_data, point_coord = point_data[100,:],  max_dist = self.MAX_OBJECT_SIZE/4)
+            if point_data_subset.shape[0] < 100:
+                raise ValueError("Can not selectr enougph points")
+                
+            self.src_points = point_data_subset/1 + 5  # small shift to see the difference
+             
+                    
                              
         else:
             self.Print('Bad choice %d is selected' %testType, 'E')
@@ -634,7 +706,14 @@ class MatchPointClouds:
             indx[0] = np.argmax(points[:,0], 0)
             indx[1] = np.argmin(points[:,0], 0)
             indx[2] = np.argmax(points[:,1], 0)
-            
+         
+        elif selectType == 12:
+             # min max elements of the array - most distant points
+            dist    = np.dot(points,np.array([1,1,1]))
+            indx[0] = np.argmax(dist, 0)
+            indx[1] = np.argmin(dist, 0)
+            dist    = np.dot(points,np.array([1,1,-1]))
+            indx[2] = np.argmax(dist, 0)           
         elif selectType == 21:
             # find the closest points for selection
             min_dist   = (d.srcE.max()/100)**2
@@ -799,7 +878,7 @@ class MatchPointClouds:
         self.dstDist    = dst_dist_dict     
          
         # select indexes
-        src_indx        = self.SelectMatchPoints(src_points, selectType = 3)
+        src_indx        = self.SelectMatchPoints(src_points, selectType = self.POINT_SELECT_TYPE)
 
         # match according to indexes
         #isOk            = self.MatchCycle3(src_indx)         
@@ -821,7 +900,7 @@ class MatchPointClouds:
         corr[:, 1]  = picked_id_target
         
         #print(corr)
-        print(np.array(source.points)[picked_id_source,:], np.array(target.points)[picked_id_target,:])
+        print(np.array(source.points)[picked_id_source,:] - np.array(target.points)[picked_id_target,:])
 
         # estimate rough transformation using correspondences
         self.Print("Compute a rough transform using the correspondences ")
@@ -1114,7 +1193,7 @@ class TestMatchPointClouds(unittest.TestCase):
     def test_MatchSourceTarget(self):
         # match cycle 
         d           = MatchPointClouds()
-        isOk        = d.SelectTestCase(61)  # 62-ok, 41-ok, 11,12-ok, 14-ok, 15-ok,31-ok, 42-ok, 51,52-ok
+        isOk        = d.SelectTestCase(72)  # 62-ok, 41-ok, 11,12-ok, 14-ok, 15-ok,31-ok, 42-ok, 51,52-ok, 61-ok, 71-ok
     
         isOk        = d.MatchSourceToTarget()
 

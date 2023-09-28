@@ -602,7 +602,7 @@ class MatchPointClouds:
         #voxel_down_pcd = pcd.voxel_down_sample(voxel_size=100.5)
         point_num   = points.shape[0]
         
-        factor      = np.maximum(factor, int(point_num/10000))
+        factor      = np.maximum(factor, int(point_num/3000))
         
         sample_rate = factor #int(len(points)/factor)
         if sample_rate > 1:
@@ -1193,7 +1193,7 @@ class TestMatchPointClouds(unittest.TestCase):
     def test_MatchSourceTarget(self):
         # match cycle 
         d           = MatchPointClouds()
-        isOk        = d.SelectTestCase(72)  # 62-ok, 41-ok, 11,12-ok, 14-ok, 15-ok,31-ok, 42-ok, 51,52-ok, 61-ok, 71-ok
+        isOk        = d.SelectTestCase(41)  # 62-ok, 41-ok, 11,12-ok, 14-ok, 15-ok,31-ok, 42-ok, 51,52-ok, 61-ok, 71-ok
     
         isOk        = d.MatchSourceToTarget()
 

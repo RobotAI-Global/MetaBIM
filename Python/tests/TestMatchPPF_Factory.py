@@ -16,7 +16,7 @@
 #     pip install matplotlib
 #     pip install opencv-contrib-python
 
-import cv2 as cv
+##import cv2 as cv
 import numpy as np
 
 N = 2

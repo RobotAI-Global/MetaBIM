@@ -485,11 +485,11 @@ if __name__ == '__main__':
     #singletest.addTest(TestMatchPointCloudsManager("test_Create")) #ok
     #singletest.addTest(TestMatchPointCloudsManager("test_LoadData")) #ok
     #singletest.addTest(TestMatchPointCloudsManager("test_ShowData")) # ok 
-    #singletest.addTest(TestMatchPointCloudsManager("test_ShowDataTwoObjects")) # ok
+    singletest.addTest(TestMatchPointCloudsManager("test_ShowDataTwoObjects")) # ok
       
     #singletest.addTest(TestMatchPointCloudsManager("test_Distance"))  # ok
     #singletest.addTest(TestMatchPointCloudsManager("test_Downsample")) #ok
-    singletest.addTest(TestMatchPointCloudsManager("test_PreprocessPointData")) #ok
+    #singletest.addTest(TestMatchPointCloudsManager("test_PreprocessPointData")) #ok
    #singletest.addTest(TestMatchPointCloudsManager("test_Histogram"))
     
     unittest.TextTestRunner().run(singletest)

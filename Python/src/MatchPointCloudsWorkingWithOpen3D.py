@@ -1219,9 +1219,9 @@ if __name__ == '__main__':
     singletest = unittest.TestSuite()
 #    singletest.addTest(TestMatching3D("test_Create"))
 #    singletest.addTest(TestMatching3D("test_LoadData"))
-#    singletest.addTest(TestMatchPointClouds("test_ShowData"))  
+    singletest.addTest(TestMatchPointClouds("test_ShowData"))  
 #    singletest.addTest(TestMatching3D("test_Distance"))
-    singletest.addTest(TestMatchPointClouds("test_MatchSourceTarget"))
+    #singletest.addTest(TestMatchPointClouds("test_MatchSourceTarget"))
 #    singletest.addTest(TestMatchPointClouds("test_Histogram"))
     
     unittest.TextTestRunner().run(singletest)

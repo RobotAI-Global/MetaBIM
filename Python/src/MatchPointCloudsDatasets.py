@@ -769,10 +769,10 @@ if __name__ == '__main__':
     # template manager test
     singletest = unittest.TestSuite()
     #singletest.addTest(TestMatchPointClouds("test_Create")) #ok
-    #singletest.addTest(TestMatchPointClouds("test_LoadData")) #ok
+    singletest.addTest(TestMatchPointClouds("test_LoadData")) #ok
     #singletest.addTest(TestMatchPointClouds("test_ShowData")) # ok 
     #singletest.addTest(TestMatchPointClouds("test_Distance"))  # ok
     #singletest.addTest(TestMatchPointClouds("test_Downsample")) #ok
-    singletest.addTest(TestMatchPointClouds("test_Histogram"))
+    #singletest.addTest(TestMatchPointClouds("test_Histogram"))
     
     unittest.TextTestRunner().run(singletest)

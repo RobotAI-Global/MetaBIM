@@ -7,11 +7,14 @@ import numpy as np
 import laspy
 import os
 
-def load_las_and_visualize(file_path):
+def load_las_and_visualize(file_path=None):
     """
     Loads a LAS file using laspy, converts it to an Open3D PointCloud, 
     and displays it in a 3D viewer.
     """
+    if file_path is None:
+        file_path = "Data/onyx.las" 
+
     if not os.path.exists(file_path):
         print(f"Error: File not found at {file_path}")
         return
@@ -59,6 +62,8 @@ def load_las_and_visualize(file_path):
     print("Visualizing point cloud. Press 'H' in the viewer for controls.")
     o3d.visualization.draw_geometries([pcd])
 
+    return pcd
+
 
 # --- Sphere Generation ---
 def point_cloud_random():
@@ -69,7 +74,12 @@ def point_cloud_random():
     pcd.points = o3d.utility.Vector3dVector(np.random.rand(1000, 3)) 
     # If you have a real point cloud, load it here
     #pcd = o3d.io.read_point_cloud("path/to/your/point_cloud.pcd")
-    return pcd
+    pcd.compute_vertex_normals()
+    pcd.paint_uniform_color([0.9, 0.6, 0.1]) # Orange color
+
+    # 2. Sample the mesh surface to get a Point Cloud
+    las_pcd = pcd.sample_points_uniformly(number_of_points=20000)    
+    return las_pcd
 
 # --- Sphere Generation ---
 def point_cloud_sphere():
@@ -108,6 +118,8 @@ def point_cloud_torus():
 
     # 3. Visualize
     o3d.visualization.draw_geometries([torus_pcd], window_name="Torus Point Cloud")
+
+    return torus_pcd
 #
 
 def point_cloud_cylinder():
@@ -144,12 +156,14 @@ def point_cloud_bunny():
 #%%
 if __name__ == '__main__':
     # 1. Working
-    #file_path = "Data/onyx.las" 
-    #load_las_and_visualize(file_path)
+    file_path = "Data/onyx.las" 
+    load_las_and_visualize(file_path)
 
     # 2. Sphere Point Cloud -ok
     #point_cloud_sphere()
 
     # 3. Torus Point Cloud -ok
-    point_cloud_torus()
+    #point_cloud_torus()
+
+    # 4.
     

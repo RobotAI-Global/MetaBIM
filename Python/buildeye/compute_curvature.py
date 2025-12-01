@@ -1,7 +1,7 @@
 
 import open3d as o3d
 import numpy as np
-from data_manager import load_las_and_visualize, point_cloud_sphere
+from data_manager import load_las_and_visualize, point_cloud_sphere, point_cloud_torus
 import matplotlib.pyplot as plt
 
 radius = 0.1  # Search radius (e.g., 10cm)
@@ -12,9 +12,8 @@ def compute_tangent_plane_curvature(pcd):
     # Define the search parameters for local neighborhood
     # Adjust these based on the density and noise of your point cloud
     print("Estimating point normals...")
-    pcd.estimate_normals(
-        search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=radius, max_nn=max_nn)
-    )
+    search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=radius, max_nn=max_nn)
+    pcd.estimate_normals(search_param=search_param)
 
     # Optional: Orient the normals consistently
     pcd.orient_normals_consistent_tangent_plane(k=max_nn)
@@ -25,17 +24,21 @@ def compute_tangent_plane_curvature(pcd):
     #3. Visualize Normals
     print("Visualizing point cloud with normals...")
 
-    # Use the draw_geometries function and set point_show_normals to True
-    o3d.visualization.draw_geometries([pcd],
-                                    window_name="Point Cloud with Normals",
-                                    # --- Key Parameter ---
-                                    point_show_normals=True,
-                                    # You can also control the line size and zoom for the initial view
-                                    zoom=0.8,
-                                    front=[0.4257, -0.2125, -0.8795],
-                                    up=[-0.4795, -0.8751, -0.0875],
-                                    lookat=[2.6172, 2.0475, 1.5323])
-
+    # # Use the draw_geometries function and set point_show_normals to True
+    # o3d.visualization.draw_geometries([pcd],
+    #                                 window_name="Point Cloud with Normals",
+    #                                 # --- Key Parameter ---
+    #                                 point_show_normals=True,
+    #                                 # You can also control the line size and zoom for the initial view
+    #                                 zoom=0.8,
+    #                                 front=[0.4257, -0.2125, -0.8795],
+    #                                 up=[-0.4795, -0.8751, -0.0875],
+    #                                 lookat=[2.6172, 2.0475, 1.5323])
+    
+    # Visualize the point cloud with normals
+    o3d.visualization.draw_geometries([pcd], point_show_normal=True)
+    
+    return pcd
 
 
 def compute_approximate_curvature(pcd, radius, max_nn):
@@ -91,7 +94,7 @@ def compute_and_show_curvature(pcd):
     #pcd = point_cloud_sphere()  # Using sphere point cloud for demonstration
 
     # 2. Compute Tangent Plane Normals
-    #compute_tangent_plane_curvature(pcd)
+    pcd = compute_tangent_plane_curvature(pcd)
 
     # 3. Compute Approximate Curvature
     # You must call this *after* normal estimation if you want to reuse the neighborhood size
@@ -118,7 +121,8 @@ def compute_and_show_curvature(pcd):
 #%% Test Class
 class TestCurvature:
     def test_compute_and_show_curvature(self):
-        pcd = point_cloud_sphere()
+        #pcd = point_cloud_sphere()
+        pcd = point_cloud_torus()
         compute_and_show_curvature(pcd)
 #%%
 if __name__ == '__main__':

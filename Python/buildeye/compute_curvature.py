@@ -277,5 +277,5 @@ if __name__ == '__main__':
     # 1. Working
     tst = TestCurvature()
     #tst.test_compute_and_show_curvature() # ok
-    #tst.test_las_file_compute_and_show_curvature()
-    tst.test_compute_and_show_quadratic()
+    tst.test_las_file_compute_and_show_curvature()
+    #tst.test_compute_and_show_quadratic()
